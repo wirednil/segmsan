@@ -1,0 +1,78 @@
+?INSPECT, SYMBOLS
+
+INT .global_ptr;
+INT .global_ptr2;
+STRING prompt[0:20] = "Enter value:";
+
+PROC main;
+    INT local_buf[0:99];
+    INT .local_ptr;
+    INT .temp_ptr;
+    INT counter;
+    STRING name[0:40];
+
+    .global_ptr := @local_buf;
+
+    .temp_ptr := @name;
+    .global_ptr2 := .temp_ptr;
+
+    counter := 0;
+    .local_ptr := @counter;
+
+    CALL process(local_buf);
+
+    FOR i := 0 TO 99 DO
+        local_buf[i] := 0;
+    END;
+
+END;
+
+PROC process(VARIABLE .buf);
+    INT inner[0:50];
+    INT idx;
+
+    .buf := 42;
+
+    SCAN buf WHILE " " -> @p;
+    idx := 5;
+
+END;
+
+PROC recursive(n);
+    INT temp;
+
+    IF n > 0 THEN
+        CALL recursive(n - 1);
+    END;
+END;
+
+PROC chain_test;
+    INT .ptr1;
+    INT .ptr2;
+    INT .ptr3;
+    INT local_data[0:10];
+
+    .ptr1 := @local_data;
+    .ptr2 := .ptr1;
+    .ptr3 := .ptr2;
+    .global_ptr := .ptr3;
+
+END;
+
+PROC conditional_taint(flag);
+    INT .ptr;
+    INT .safe_ptr;
+    INT local_a[0:5];
+    INT local_b[0:5];
+
+    IF flag THEN
+        .ptr := @local_a
+    ELSE
+        .ptr := @local_b;
+    .global_ptr := .ptr;
+
+END;
+
+    .global_ptr := .ptr;
+
+END;

@@ -1,0 +1,18 @@
+define bad_macro( buf, key ) =   RSCAN buf UNTIL key -> @p1;
+                                   SCAN buf UNTIL "." -> @p2;
+                                   len := @p1 '-' @buf         #;
+
+define safe_macro( buf )      =   SCAN buf UNTIL " " -> @p;
+                                   IF $CARRY THEN len := 0   #;
+
+INT PROC test_define_analysis;
+BEGIN
+    STRING data[0:99] := [100 * [" "]];
+    INT    len := 0;
+    INT    result := 0;
+
+    bad_macro( data, "X" );
+    safe_macro( data );
+
+    result := len;
+END;

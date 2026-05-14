@@ -1,0 +1,38 @@
+?INSPECT, SYMBOLS
+
+INT .global_ptr;
+
+PROC A;
+    INT local_buf[0:99];
+    CALL B(@local_buf);
+END;
+
+PROC B(ref);
+    INT .ref;
+BEGIN
+    .global_ptr := ref;
+END;
+
+PROC C;
+    INT .p;
+    .p := .global_ptr;
+    .p := 42;
+END;
+
+PROC chain_cross_frame;
+    INT local_data[0:10];
+    INT .tmp;
+    .tmp := @local_data;
+    CALL store_globally(tmp);
+END;
+
+PROC store_globally(p);
+    INT .p;
+BEGIN
+    .global_ptr := p;
+END;
+
+PROC safe_proc;
+    INT x := 42;
+    x := x + 1;
+END;

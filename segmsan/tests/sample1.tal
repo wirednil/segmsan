@@ -1,0 +1,54 @@
+?SECTION main
+?INSPECT, SYMBOLS
+
+INT .global_ptr;
+INT .global_ptr2;
+STRING prompt[0:20] = "Enter value:";
+
+PROC main;
+    INT local_buf[0:99];
+    INT .local_ptr;
+    INT counter;
+    STRING name[0:40];
+
+    .global_ptr := @local_buf;
+
+    .global_ptr2 := @name;
+
+    counter := 0;
+    local_ptr := @counter;
+
+    CALL process(local_buf);
+
+    FOR i := 0 TO 99 DO
+        local_buf[i] := 0;
+    END;
+
+END;
+
+PROC process(VARIABLE .buf);
+    INT inner[0:50];
+    INT idx;
+
+    .buf := 42;
+
+    SCAN buf WHILE " " -> @p;
+    idx := 5;
+
+END;
+
+PROC recursive(n);
+    INT temp;
+
+    IF n > 0 THEN
+        CALL recursive(n - 1);
+    END;
+END;
+
+PROC recursive_safe(n);
+    INT temp;
+
+    IF n > 0 THEN
+        CALL recursive_safe(n - 1);
+    END;
+END;

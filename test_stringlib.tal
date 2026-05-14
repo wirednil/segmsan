@@ -1,0 +1,292 @@
+?INSPECT
+?SYMBOLS
+
+! ========================================================================
+! test_stringlib.tal — Advanced test suite for TAL analyzer
+!
+! Tests:
+!   - Proper struct definitions (templates, definitions, referrals)
+!   - Indirect vs direct allocation
+!   - Correct SCAN with $CARRY handling
+!   - Storage efficiency
+!   - Parameter passing (by value vs by reference)
+!   - Extended pointers
+!
+! This is a GOOD example — should generate 0-1 warnings only
+! ========================================================================
+
+?NOLIST, SOURCE $SYSTEM.SYSTEM.EXTDECS (
+?    READ, WRITE, CLOSE, OPEN, INITIALIZER, MYTERM)
+?LIST
+
+?NOLIST, SOURCE $SYSTEM.SYSTEM.RTLDECS (
+?    RTL_STRLEN_, RTL_STRCPY_, RTL_STRNCAT_,
+?    RTL_STRCMP_, RTL_STRRCHR_)
+?LIST
+
+! ========================================================================
+! SECTION 1: Correct struct templates (0 words)
+! ========================================================================
+
+?SECTION template^defs
+
+STRUCT string^pool (*);
+BEGIN
+    INT     count;
+    INT .EXT entries;     ! Extended pointer
+    INT     total^size;
+END;
+
+STRUCT buffer^hdr (*);
+BEGIN
+    INT     magic;
+    INT     version;
+    INT     capacity;
+    INT     used;
+    STRING  reserved[0:7];
+END;
+
+! ========================================================================
+! SECTION 2: Global declarations — GOOD storage management
+! ========================================================================
+
+?SECTION globals
+
+INT .global^pool := 0;           ! 1w pointer, data in secondary
+INT  pool^initialized := 0;
+INT  error^code := 0;
+
+! ========================================================================
+! SECTION 3: Safe string utilities
+! ========================================================================
+
+?SECTION str^utils
+
+! str^length — correct implementation
+!   No overflow: locals = 2w (minimal)
+!   Returns: string length
+!
+INT PROC str^length(str)
+    STRING .str;
+BEGIN
+    INT len := 0;
+    len := RTL_STRLEN_(str);
+    RETURN len;
+END;
+
+! str^copy^safe — correctly handles indirection
+!   Indirect arrays for strings — avoids local overflow
+!
+INT PROC str^copy^safe(dest, src, max^size)
+    STRING .dest;
+    STRING .src;
+    INT     max^size;
+BEGIN
+    INT     src^len := 0,
+            copy^len := 0;
+
+    src^len := RTL_STRLEN_(src);
+
+    IF src^len > max^size THEN
+        copy^len := max^size
+    ELSE
+        copy^len := src^len;
+
+    CALL RTL_STRNCPY_(dest, src, copy^len);
+    RETURN copy^len;
+END;
+
+! str^index^char — PROPER $CARRY handling
+!   This is THE CORRECT way to use SCAN
+!
+INT PROC str^index^char(str, target)
+    STRING .str;
+    STRING target;
+BEGIN
+    INT position := 0;
+
+    ! SCAN with $CARRY check
+    SCAN str WHILE <> target -> position;
+    IF $CARRY THEN
+        RETURN position;
+    ELSE
+        RETURN -1;  ! Not found — handled correctly!
+END;
+
+! str^find^last — correct search from end
+!   Uses RTL_STRRCHR_ (find last occurrence)
+!
+INT PROC str^find^last(str, target)
+    STRING .str;
+    STRING target;
+BEGIN
+    INT     .result := 0;
+    INT     pos := 0;
+
+    result := CALL RTL_STRRCHR_(str, target);
+
+    IF result <> 0 THEN
+        pos := @result - @str;
+    ELSE
+        pos := -1;
+
+    RETURN pos;
+END;
+
+! ========================================================================
+! SECTION 4: Proper referral struct usage
+! ========================================================================
+
+?SECTION struct^usage
+
+! process^pool — work with pool referral
+!   Takes referral struct (1w indirect pointer)
+!
+PROC process^pool(pool)
+    STRUCT .pool (string^pool);
+BEGIN
+    INT     count := 0,
+            total := 0;
+
+    count := pool.count;
+    total := pool.total^size;
+
+    ! Processing logic here
+END;
+
+! create^buffer^hdr — creates header struct
+!   Returns: pointer to buffer header (indirect)
+!
+INT PROC create^buffer^hdr(capacity)
+    INT capacity;
+BEGIN
+    INT .hdr := 0;
+    ! In real code: allocate from secondary storage
+    ! For test: just return 0
+    RETURN @hdr;
+END;
+
+! ========================================================================
+! SECTION 5: Proper parameter passing
+! ========================================================================
+
+?SECTION param^tests
+
+! modify^int^byref — reference parameter (output param)
+!   Correctly takes pointer
+!
+PROC modify^int^byref(value)
+    INT .value;
+BEGIN
+    @value := @value + 10;
+END;
+
+! read^string^byref — reference parameter (input param)
+!   Correctly takes pointer to string
+!
+PROC read^string^byref(str, length)
+    STRING .str;
+    INT .length;
+BEGIN
+    @length := RTL_STRLEN_(str);
+END;
+
+! print^int — takes int by value
+!   Correct for value parameters
+!
+PROC print^int(value)
+    INT value;
+BEGIN
+    ! Process value
+END;
+
+! ========================================================================
+! SECTION 6: Extended pointer usage (when needed)
+! ========================================================================
+
+?SECTION extended^ptrs
+
+! large^buffer^init — uses extended pointers
+!   For data > 32K words
+!
+PROC large^buffer^init(buffer, size)
+    INT .EXT buffer;
+    INT      size;
+BEGIN
+    INT count := 0;
+
+    ! Extended pointers enable data > 32K
+    ! buffer is 2 words in local primary
+    CALL RTL_MEMORY_SET_(buffer, 0, size);
+END;
+
+! ========================================================================
+! SECTION 7: Correct recursive procedure
+! ========================================================================
+
+?SECTION good^recursion
+
+?LARGESTACK
+PROC tree^traverse(node, depth)
+    INT .node;
+    INT  depth;
+BEGIN
+    INT     value := 0,
+            left := 0,
+            right := 0;
+
+    IF node = 0 THEN
+        RETURN;
+
+    value := @node;
+    left := @(node + 4);
+    right := @(node + 8);
+
+    IF left <> 0 THEN
+        CALL tree^traverse(left, depth + 1);
+
+    IF right <> 0 THEN
+        CALL tree^traverse(right, depth + 1);
+END;
+
+! ========================================================================
+! SECTION 8: Main program — demonstrating proper techniques
+! ========================================================================
+
+?SECTION main
+
+PROC main^prog MAIN;
+BEGIN
+    INT     len := 0,
+            pos := 0,
+            result := 0;
+    STRING  test^str[0:31] := ["Hello from TAL string library", 0];
+    STRING  .buffer := 0;
+
+    ! Initialize
+    CALL INITIALIZER;
+
+    ! Test string operations
+    len := CALL str^length(test^str);
+
+    ! Safe copy
+    CALL str^copy^safe(buffer, test^str, 32);
+
+    ! Find character — with proper $CARRY check
+    pos := CALL str^index^char(test^str, "o");
+
+    ! Find last
+    result := CALL str^find^last(test^str, "l");
+
+    RETURN;
+END;
+
+! ========================================================================
+! Summary: This file demonstrates GOOD practices
+!   - Templates use 0 words ✓
+!   - Indirect pointers in secondary storage ✓
+!   - SCAN with $CARRY checks ✓
+!   - ?LARGESTACK for recursion ✓
+!   - Proper parameter passing ✓
+!   - Extended pointers for large data ✓
+! ========================================================================
