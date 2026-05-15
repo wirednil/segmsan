@@ -142,6 +142,11 @@ class Parser:
         loc = SourceLocation(self._cur().line, self._cur().col)
         self._advance()
 
+        is_ext = False
+        if self._match_keyword("EXT"):
+            is_ext = True
+            self._advance()
+
         is_indirect = False
         if self._cur().type == TokenType.DOT:
             is_indirect = True
@@ -223,6 +228,7 @@ class Parser:
         decl = VarDecl(
             name=name, tal_type=TalType.STRUCT,
             loc=loc, is_indirect=is_indirect,
+            is_extended=is_ext,
             array_bounds=array_bounds,
             struct_fields=struct_fields,
             is_template=is_template,

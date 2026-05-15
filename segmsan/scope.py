@@ -42,11 +42,21 @@ SCOPE_LIMITS = {
 class ScopeLevel:
     kind: ScopeKind
     variables: dict[str, VarInfo] = field(default_factory=dict)
-    allocated_words: int = 0
+    primary_words: int = 0
+    secondary_words: int = 0
+    extended_words: int = 0
+
+    @property
+    def allocated_words(self) -> int:
+        return self.primary_words
 
     @property
     def max_words(self) -> int:
         return SCOPE_LIMITS[self.kind]
+
+    @property
+    def combined_words(self) -> int:
+        return self.primary_words + self.secondary_words
 
 
 class ScopeStack:
@@ -76,8 +86,14 @@ class ScopeStack:
         )
         if self.current:
             self.current.variables[decl.name.upper()] = info
-            if not decl.is_indirect:
-                self.current.allocated_words += decl.word_size()
+            if decl.is_indirect:
+                self.current.primary_words += decl.pointer_word_size()
+                if decl.is_extended:
+                    self.current.extended_words += decl.data_word_size()
+                else:
+                    self.current.secondary_words += decl.data_word_size()
+            else:
+                self.current.primary_words += decl.word_size()
         return info
 
     def declare_param(self, param: ParamDecl, scope_kind: ScopeKind):
@@ -138,10 +154,32 @@ class ScopeStack:
     def global_allocated(self) -> int:
         for level in self.levels:
             if level.kind == ScopeKind.GLOBAL:
-                return level.allocated_words
+                return level.primary_words
+        return 0
+
+    def global_secondary(self) -> int:
+        for level in self.levels:
+            if level.kind == ScopeKind.GLOBAL:
+                return level.secondary_words
+        return 0
+
+    def global_extended(self) -> int:
+        for level in self.levels:
+            if level.kind == ScopeKind.GLOBAL:
+                return level.extended_words
         return 0
 
     def local_allocated(self) -> int:
         if self.current and self.current.kind in (ScopeKind.LOCAL, ScopeKind.SUBLOCAL):
-            return self.current.allocated_words
+            return self.current.primary_words
+        return 0
+
+    def local_secondary(self) -> int:
+        if self.current and self.current.kind in (ScopeKind.LOCAL, ScopeKind.SUBLOCAL):
+            return self.current.secondary_words
+        return 0
+
+    def local_extended(self) -> int:
+        if self.current and self.current.kind in (ScopeKind.LOCAL, ScopeKind.SUBLOCAL):
+            return self.current.extended_words
         return 0

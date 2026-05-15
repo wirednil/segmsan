@@ -55,6 +55,8 @@ class WarningKind(Enum):
     PADDING_WASTE_LOCAL = auto()
     PADDING_WASTE_SUBLOCAL = auto()
     PADDING_WASTE_STRUCT = auto()
+    SECONDARY_OVERFLOW = auto()
+    SUBLOCAL_INDIRECT = auto()
 
 
 SEVERITY_MAP = {
@@ -82,6 +84,8 @@ SEVERITY_MAP = {
     WarningKind.PADDING_WASTE_LOCAL: Severity.LOW,
     WarningKind.PADDING_WASTE_SUBLOCAL: Severity.LOW,
     WarningKind.PADDING_WASTE_STRUCT: Severity.MEDIUM,
+    WarningKind.SECONDARY_OVERFLOW: Severity.HIGH,
+    WarningKind.SUBLOCAL_INDIRECT: Severity.MEDIUM,
 }
 
 RULE_NUMBERS = {
@@ -109,6 +113,8 @@ RULE_NUMBERS = {
     WarningKind.PADDING_WASTE_LOCAL: 22,
     WarningKind.PADDING_WASTE_SUBLOCAL: 23,
     WarningKind.PADDING_WASTE_STRUCT: 24,
+    WarningKind.SECONDARY_OVERFLOW: 25,
+    WarningKind.SUBLOCAL_INDIRECT: 26,
 }
 
 RULE_DESCRIPTIONS = {
@@ -136,6 +142,8 @@ RULE_DESCRIPTIONS = {
     WarningKind.PADDING_WASTE_LOCAL: "Wasted bytes from padding in local declarations",
     WarningKind.PADDING_WASTE_SUBLOCAL: "Wasted bytes from padding in sublocal declarations",
     WarningKind.PADDING_WASTE_STRUCT: "Wasted bytes from padding in struct field layout",
+    WarningKind.SECONDARY_OVERFLOW: "Primary + secondary storage exceeds 32,768 words (64 KB)",
+    WarningKind.SUBLOCAL_INDIRECT: "Indirect declaration in sublocal — compiler converts to direct (no secondary area)",
 }
 
 GROUPABLE_KINDS = {

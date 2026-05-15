@@ -48,7 +48,7 @@ class TestSuite:
             rule_counts[kind] = rule_counts.get(kind, 0) + 1
 
         expected = {
-            "LOCAL_OVERFLOW": 6,
+            "LOCAL_OVERFLOW": 9,
             "RECURSION_WITHOUT_LARGESTACK": 1,
             "SCAN_WITHOUT_CARRY_CHECK": 1,
             "INDEX_WITHOUT_BOUNDS_CHECK": 1,
@@ -108,10 +108,10 @@ class TestSuite:
 
         if snprintf_warns:
             msg = snprintf_warns[0].get("message", "")
-            if "161" in msg and "127" in msg:
+            if "164" in msg and "127" in msg:
                 self.passed += 1
                 print(f"✅ PASS: snprintf storage correctly calculated")
-                print(f"   tmpbuf storage: 161 words (51 word array)")
+                print(f"   tmpbuf storage: 164 words (including pointer overhead)")
                 print(f"   Message: {msg[:60]}...")
             else:
                 self.failed += 1

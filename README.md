@@ -34,7 +34,7 @@ Output is diagnostic-style with colors, carets, grouped summaries, and fix sugge
 ## Architecture
 
 ```
-segmsan/
+src/
   __main__.py       CLI entry point
   preprocessor.py   DEFINE expansion + SOURCE import + macro tracking
   lexer.py          TAL tokenizer

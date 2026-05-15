@@ -72,6 +72,28 @@ class VarDecl:
             return base * self.array_bounds.size
         return base
 
+    def pointer_word_size(self) -> int:
+        if self.is_template or not self.is_indirect:
+            return 0
+        return 2 if self.is_extended else 1
+
+    def data_word_size(self) -> int:
+        if self.is_template:
+            return 0
+        if self.is_indirect:
+            base = self._base_data_word_size()
+            if self.array_bounds:
+                return base * self.array_bounds.size
+            return base
+        return self.word_size()
+
+    def _base_data_word_size(self) -> int:
+        if self.tal_type == TalType.STRUCT:
+            if self.struct_fields is not None:
+                return sum(f.word_size() for f in self.struct_fields if not f.is_indirect)
+            return 0
+        return self._base_word_size()
+
     def _base_word_size(self) -> int:
         match self.tal_type:
             case TalType.INT | TalType.STRING | TalType.PROC:
