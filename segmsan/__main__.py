@@ -36,6 +36,8 @@ def main():
     ap.add_argument("-I", "--import-dir", action="append", default=[],
                     dest="import_dirs",
                     help="Additional search directory for ?SOURCE imports (repeatable)")
+    ap.add_argument("-bt", "--backtrace",
+                    help="Call backtrace: func1:func2:...:funcN (use ... for auto-discover)")
     args = ap.parse_args()
 
     try:
@@ -101,6 +103,11 @@ def main():
         if import_tree:
             print()
             print(format_import_tree(import_tree, args.source))
+
+    if args.backtrace:
+        from .backtrace import format_backtrace
+        print()
+        print(format_backtrace(program, args.backtrace))
 
     if any(w.severity == Severity.CRITICAL for w in warnings):
         sys.exit(1)
