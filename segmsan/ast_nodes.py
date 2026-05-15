@@ -325,6 +325,13 @@ class OtherStmt(Statement):
 
 
 @dataclass
+class CaseStmt(Statement):
+    selector: object = None
+    body: list = field(default_factory=list)
+    loc: SourceLocation = field(default_factory=lambda: SourceLocation(0))
+
+
+@dataclass
 class SourceImport:
     path: str
     names: list[str] = field(default_factory=list)

@@ -15,7 +15,7 @@ import os
 from collections import deque
 from .ast_nodes import (
     Program, Procedure, Statement,
-    CallStmt, CallExpr, AssignStmt, IfStmt, WhileStmt, ForStmt,
+    CallStmt, CallExpr, AssignStmt, IfStmt, WhileStmt, ForStmt, CaseStmt,
     BinOpExpr, ScopeKind,
 )
 from .scope import ScopeStack, SCOPE_LIMITS
@@ -58,6 +58,9 @@ def _collect_calls(stmt: Statement, out: set[str]) -> None:
         for s in stmt.body:
             _collect_calls(s, out)
     if isinstance(stmt, ForStmt):
+        for s in stmt.body:
+            _collect_calls(s, out)
+    if isinstance(stmt, CaseStmt):
         for s in stmt.body:
             _collect_calls(s, out)
 

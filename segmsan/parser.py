@@ -731,6 +731,8 @@ class Parser:
         if t.type == TokenType.EOF or self._match_keyword("END"):
             return None
 
+        if self._match_keyword("CASE"):
+            return self._parse_case()
         if self._match_keyword("IF"):
             return self._parse_if()
         if self._match_keyword("WHILE"):
@@ -790,6 +792,49 @@ class Parser:
             self._advance()
 
         return OtherStmt(raw=t.value, loc=SourceLocation(t.line, t.col))
+
+    def _parse_case(self) -> Statement:
+        loc = SourceLocation(self._cur().line, self._cur().col)
+        self._advance()
+
+        selector = self._try_parse_expr()
+
+        if self._match_keyword("OF"):
+            self._advance()
+
+        body: list[Statement] = []
+
+        if self._match_keyword("BEGIN"):
+            self._advance()
+            while not self._match_keyword("END") and self._cur().type != TokenType.EOF:
+                self._skip_semis()
+                if self._match_keyword("END"):
+                    break
+                if self._cur().type == TokenType.ARROW:
+                    self._advance()
+                    continue
+                if self._match_keyword("OTHERWISE"):
+                    self._advance()
+                    if self._cur().type == TokenType.ARROW:
+                        self._advance()
+                    continue
+                if self._match_keyword("BEGIN"):
+                    inner = self._parse_simple_stmt_list()
+                    body.extend(inner)
+                    continue
+                stmt = self._parse_statement()
+                if stmt:
+                    body.append(stmt)
+            if self._match_keyword("END"):
+                self._advance()
+            if self._cur().type == TokenType.SEMI:
+                self._advance()
+        else:
+            stmt = self._parse_statement()
+            if stmt:
+                body.append(stmt)
+
+        return CaseStmt(selector=selector, body=body, loc=loc)
 
     def _parse_if(self) -> IfStmt:
         loc = SourceLocation(self._cur().line, self._cur().col)
