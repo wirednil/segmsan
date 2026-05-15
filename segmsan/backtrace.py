@@ -109,10 +109,14 @@ def _entry_point(program: Program) -> Procedure:
     return program.procedures[0] if program.procedures else None
 
 
-def _is_main(program: Program, proc: Procedure) -> bool:
-    if not program.procedures:
+def _is_api(program: Program, graph: dict[str, set[str]], proc: Procedure) -> bool:
+    name_u = proc.name.upper()
+    if program.procedures and program.procedures[0].name.upper() == name_u:
         return False
-    return program.procedures[0].name.upper() == proc.name.upper()
+    for caller, callees in graph.items():
+        if name_u in callees:
+            return False
+    return True
 
 
 def resolve_backtrace_path(
@@ -205,7 +209,8 @@ def format_backtrace(program: Program, bt_str: str) -> str:
         })
 
     entry_proc = frames[0].get("proc")
-    is_lib = not _is_main(program, entry_proc) if entry_proc else True
+    graph = build_call_graph(program)
+    is_api = _is_api(program, graph, entry_proc) if entry_proc else True
 
     global_w = _global_words(program)
     n_frames = len(frames)
@@ -227,7 +232,7 @@ def format_backtrace(program: Program, bt_str: str) -> str:
         frame_num = n_frames - 1 - i
         accumulated = sum(frames[j]["words"] for j in range(i + 1)) + 3 * (i + 1) + global_w
         label = ""
-        if i == 0 and is_lib:
+        if i == 0 and is_api:
             label = " (api)"
         name_field = f["name"] + label
         lines.append(

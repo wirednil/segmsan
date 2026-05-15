@@ -81,7 +81,9 @@ def collect_defines(source: str) -> tuple[list[DefineMacro], str]:
 def _pad_to_match_lines(replacement: str, original: str) -> str:
     orig_nl = original.count('\n')
     repl_nl = replacement.count('\n')
-    if repl_nl < orig_nl:
+    if repl_nl > orig_nl:
+        replacement = replacement.replace('\n', ' ') + '\n' * orig_nl
+    elif repl_nl < orig_nl:
         replacement += '\n' * (orig_nl - repl_nl)
     return replacement
 
