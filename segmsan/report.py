@@ -57,6 +57,7 @@ class WarningKind(Enum):
     PADDING_WASTE_STRUCT = auto()
     SECONDARY_OVERFLOW = auto()
     SUBLOCAL_INDIRECT = auto()
+    UNRESOLVED_TEMPLATE = auto()
 
 
 SEVERITY_MAP = {
@@ -86,6 +87,7 @@ SEVERITY_MAP = {
     WarningKind.PADDING_WASTE_STRUCT: Severity.MEDIUM,
     WarningKind.SECONDARY_OVERFLOW: Severity.HIGH,
     WarningKind.SUBLOCAL_INDIRECT: Severity.MEDIUM,
+    WarningKind.UNRESOLVED_TEMPLATE: Severity.MEDIUM,
 }
 
 RULE_NUMBERS = {
@@ -115,6 +117,7 @@ RULE_NUMBERS = {
     WarningKind.PADDING_WASTE_STRUCT: 24,
     WarningKind.SECONDARY_OVERFLOW: 25,
     WarningKind.SUBLOCAL_INDIRECT: 26,
+    WarningKind.UNRESOLVED_TEMPLATE: 27,
 }
 
 RULE_DESCRIPTIONS = {
@@ -144,6 +147,7 @@ RULE_DESCRIPTIONS = {
     WarningKind.PADDING_WASTE_STRUCT: "Wasted bytes from padding in struct field layout",
     WarningKind.SECONDARY_OVERFLOW: "Primary + secondary storage exceeds 32,768 words (64 KB)",
     WarningKind.SUBLOCAL_INDIRECT: "Indirect declaration in sublocal — compiler converts to direct (no secondary area)",
+    WarningKind.UNRESOLVED_TEMPLATE: "Struct references template from unresolved import — size unknown, totals are lower bounds",
 }
 
 GROUPABLE_KINDS = {
@@ -436,6 +440,9 @@ def _format_help(kind: WarningKind, w: Warning, var_name: str,
         return (f"Add ?LARGESTACK directive before the PROC\n"
                 f"      ?LARGESTACK\n"
                 f"      INT PROC {proc_name};")
+    if kind == WarningKind.UNRESOLVED_TEMPLATE:
+        return (f"Provide the missing ?SOURCE file so the template can be resolved\n"
+                f"      or add the struct definition locally with STRUCT name (*); BEGIN ... END;")
     if w.suggestion:
         return w.suggestion
     return ""

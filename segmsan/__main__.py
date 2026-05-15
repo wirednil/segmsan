@@ -12,7 +12,7 @@ from .report import format_report, format_json, Severity, WarningKind
 from .preprocessor import (
     preprocess, collect_defines, collect_defines_recursive, expand_macros,
 )
-from .resolver import resolve_imports, format_import_tree
+from .resolver import resolve_imports, resolve_templates, format_import_tree
 
 
 def main():
@@ -73,6 +73,8 @@ def main():
         skip_missing=args.skip_missing_sources,
         search_dirs=args.import_dirs,
     )
+
+    resolve_templates(program)
 
     warnings = run_all_checks(program)
 

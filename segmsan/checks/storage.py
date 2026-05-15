@@ -8,6 +8,40 @@ from ..report import Warning, WarningKind
 COMBINED_LIMIT = 32768
 
 
+def _check_unresolved_templates(program: Program, warnings: list[Warning]) -> None:
+    seen: set[tuple[str, str]] = set()
+    for proc in program.procedures:
+        for decl in proc.locals_:
+            if (decl.tal_type.name == "STRUCT"
+                    and decl.template_name
+                    and decl.struct_fields is None):
+                key = (proc.name.upper(), decl.template_name.upper())
+                if key in seen:
+                    continue
+                seen.add(key)
+                indirect_label = "indirect" if decl.is_indirect else "direct"
+                msg = (f"Unresolved template in {proc.name}: {decl.name} references "
+                       f"{decl.template_name} ({indirect_label}) — "
+                       f"size unknown, storage totals may be underestimated")
+                warnings.append(Warning(
+                    kind=WarningKind.UNRESOLVED_TEMPLATE,
+                    message=msg,
+                    loc=f"{program.source_file}{decl.loc}",
+                ))
+    for decl in program.globals_:
+        if (decl.tal_type.name == "STRUCT"
+                and decl.template_name
+                and decl.struct_fields is None
+                and not decl.is_template):
+            msg = (f"Unresolved global template reference: {decl.name} references "
+                   f"{decl.template_name} — size unknown")
+            warnings.append(Warning(
+                kind=WarningKind.UNRESOLVED_TEMPLATE,
+                message=msg,
+                loc=f"{program.source_file}{decl.loc}",
+            ))
+
+
 def check_storage_overflows(program: Program) -> list[Warning]:
     warnings: list[Warning] = []
     scope = ScopeStack()
@@ -52,6 +86,8 @@ def check_storage_overflows(program: Program) -> list[Warning]:
 
     for proc in program.procedures:
         _check_proc_storage(proc, program.source_file, warnings)
+
+    _check_unresolved_templates(program, warnings)
 
     return warnings
 

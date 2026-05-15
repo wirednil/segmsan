@@ -159,6 +159,7 @@ class Parser:
         array_bounds = None
         is_template = False
         has_paren_content = False
+        template_name = ""
         if self._cur().type == TokenType.LPAREN:
             self._advance()
             paren_content = ""
@@ -168,6 +169,8 @@ class Parser:
             has_paren_content = True
             if paren_content.strip() == "*":
                 is_template = True
+            else:
+                template_name = paren_content.strip()
             if self._cur().type == TokenType.RPAREN:
                 self._advance()
         if self._cur().type == TokenType.LBRACK:
@@ -232,6 +235,7 @@ class Parser:
             array_bounds=array_bounds,
             struct_fields=struct_fields,
             is_template=is_template,
+            template_name=template_name,
         )
         target_list.append(decl)
 
@@ -352,6 +356,14 @@ class Parser:
 
         is_variable = False
         has_largestack = False
+
+        if self._match_keyword("MAIN") or (self._cur().type == TokenType.IDENT and self._cur().value.upper() == "MAIN"):
+            is_main = True
+            self._advance()
+
+        if self._match_keyword("VARIABLE") or (self._cur().type == TokenType.IDENT and self._cur().value.upper() == "VARIABLE"):
+            is_variable = True
+            self._advance()
 
         if self._cur().type == TokenType.SEMI:
             self._advance()
@@ -611,10 +623,13 @@ class Parser:
             elif self._cur().type == TokenType.KEYWORD:
                 name = self._advance().value
 
+            template_name = ""
             if self._cur().type == TokenType.LPAREN:
                 self._advance()
+                tn_parts: list[str] = []
                 while self._cur().type not in (TokenType.RPAREN, TokenType.EOF):
-                    self._advance()
+                    tn_parts.append(self._advance().value)
+                template_name = "".join(tn_parts)
                 if self._cur().type == TokenType.RPAREN:
                     self._advance()
 
@@ -684,6 +699,7 @@ class Parser:
                 equivalence_target=equivalence_target,
                 fpoint=fpoint, width=width,
                 has_initializer=has_init,
+                template_name=template_name,
             ))
 
             if self._cur().type == TokenType.COMMA:
@@ -860,6 +876,10 @@ class Parser:
                 self._skip_semis()
                 if self._match_keyword("END"):
                     break
+                if self._match_keyword("BEGIN"):
+                    inner = self._parse_simple_stmt_list()
+                    stmts.extend(inner)
+                    continue
                 stmt = self._parse_statement()
                 if stmt:
                     stmts.append(stmt)

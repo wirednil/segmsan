@@ -12,7 +12,7 @@ import os
 import sys
 from .lexer import Lexer
 from .parser import Parser
-from .ast_nodes import Program, Procedure, SourceImport, ImportNode
+from .ast_nodes import Program, Procedure, SourceImport, ImportNode, VarDecl, TalType
 
 
 def resolve_imports(program: Program, base_dir: str,
@@ -210,3 +210,32 @@ def format_import_tree(tree: list[ImportNode], source_file: str) -> str:
         lines.append(f"Imported: {total_procs} procedures, {total_globals} globals")
 
     return "\n".join(lines)
+
+
+def resolve_templates(program: Program) -> int:
+    template_map: dict[str, VarDecl] = {}
+    for g in program.globals_:
+        if g.is_template and g.tal_type == TalType.STRUCT and g.struct_fields is not None:
+            template_map[g.name.upper()] = g
+
+    resolved = 0
+
+    def _resolve_in_list(decls: list[VarDecl]) -> None:
+        nonlocal resolved
+        for decl in decls:
+            if (decl.tal_type == TalType.STRUCT
+                    and decl.struct_fields is None
+                    and decl.template_name):
+                tmpl = template_map.get(decl.template_name.upper())
+                if tmpl is not None:
+                    decl.struct_fields = tmpl.struct_fields
+                    resolved += 1
+
+    _resolve_in_list(program.globals_)
+
+    for proc in program.procedures:
+        _resolve_in_list(proc.locals_)
+        for sp in proc.subprocs:
+            _resolve_in_list(sp.locals_)
+
+    return resolved

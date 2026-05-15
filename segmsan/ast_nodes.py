@@ -61,6 +61,7 @@ class VarDecl:
     struct_fields: Optional[list[VarDecl]] = None
     has_initializer: bool = False
     is_template: bool = False
+    template_name: str = ""
 
     def word_size(self) -> int:
         if self.is_template:

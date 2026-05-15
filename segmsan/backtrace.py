@@ -1,8 +1,13 @@
 """Call backtrace analysis for TAL programs.
 
 Builds a call graph from procedure bodies, resolves call paths
-(either manual or auto-discovered via BFS), and computes the
-accumulated stack usage along the call chain.
+(either manual or auto-discovered via BFS), extends the path
+upward to the root caller, and computes accumulated stack usage.
+
+bt semantics:
+  bt func1:func2:print
+  → breakpoint at print inside func2 inside func1
+  → backtrace continues upward from func1 to root (main or api)
 """
 
 from __future__ import annotations
@@ -29,6 +34,14 @@ def build_call_graph(program: Program) -> dict[str, set[str]]:
                 _collect_calls(stmt, callees)
         graph[proc.name.upper()] = callees
     return graph
+
+
+def build_reverse_graph(graph: dict[str, set[str]]) -> dict[str, set[str]]:
+    reverse: dict[str, set[str]] = {}
+    for caller, callees in graph.items():
+        for callee in callees:
+            reverse.setdefault(callee, set()).add(caller)
+    return reverse
 
 
 def _collect_calls(stmt: Statement, out: set[str]) -> None:
@@ -59,7 +72,7 @@ def _collect_expr_calls(expr, out: set[str]) -> None:
         _collect_expr_calls(expr.right, out)
 
 
-def find_path(graph: dict[str, set[str]], start: str, end: str) -> list[str] | None:
+def find_path_down(graph: dict[str, set[str]], start: str, end: str) -> list[str] | None:
     if start == end:
         return [start]
     start_u = start.upper()
@@ -75,6 +88,23 @@ def find_path(graph: dict[str, set[str]], start: str, end: str) -> list[str] | N
                 visited.add(callee)
                 queue.append((callee, path + [callee]))
     return None
+
+
+def find_path_up(reverse_graph: dict[str, set[str]], start: str) -> list[str]:
+    path: list[str] = [start.upper()]
+    current = start.upper()
+    visited: set[str] = {current}
+    while True:
+        callers = reverse_graph.get(current, set())
+        local_callers = callers - visited
+        if not local_callers:
+            break
+        next_caller = sorted(local_callers)[0]
+        visited.add(next_caller)
+        path.append(next_caller)
+        current = next_caller
+    path.reverse()
+    return path
 
 
 def _proc_primary_words(proc: Procedure) -> int:
@@ -105,18 +135,9 @@ def _find_proc(program: Program, name: str) -> Procedure | None:
     return None
 
 
-def _entry_point(program: Program) -> Procedure:
-    return program.procedures[0] if program.procedures else None
-
-
-def _is_api(program: Program, graph: dict[str, set[str]], proc: Procedure) -> bool:
-    name_u = proc.name.upper()
-    if program.procedures and program.procedures[0].name.upper() == name_u:
-        return False
-    for caller, callees in graph.items():
-        if name_u in callees:
-            return False
-    return True
+def _has_callers(reverse_graph: dict[str, set[str]], name: str) -> bool:
+    callers = reverse_graph.get(name.upper(), set())
+    return bool(callers)
 
 
 def resolve_backtrace_path(
@@ -128,60 +149,59 @@ def resolve_backtrace_path(
         return None
 
     graph = build_call_graph(program)
-    entry = _entry_point(program)
-    if not entry:
-        return None
+    reverse_graph = build_reverse_graph(graph)
+
+    all_names = set(graph.keys())
+    for callee_set in graph.values():
+        all_names |= callee_set
+    for p in parts:
+        if _find_proc(program, p) is None and p.upper() not in all_names:
+            return None
 
     if len(parts) == 1:
         target = parts[0]
-        target_proc = _find_proc(program, target)
-        if target_proc is None:
-            return None
-        if target.upper() == entry.name.upper():
-            return [entry.name]
-        path = find_path(graph, entry.name, target)
-        return path
+        upward = find_path_up(reverse_graph, target)
+        return upward
 
-    first_known = parts[0]
-    first_proc = _find_proc(program, first_known)
+    first = parts[0]
+    last = parts[-1]
+
+    first_proc = _find_proc(program, first)
     if first_proc is None:
-        first_proc = entry
-        parts = [entry.name] + parts
+        return None
 
-    resolved: list[str] = []
-    current = parts[0]
+    down_path = [first.upper()]
+    current = first.upper()
 
-    for i, target in enumerate(parts):
-        target_proc = _find_proc(program, target)
-        if target_proc is None:
-            return None
-
-        if i == 0:
-            resolved.append(target)
-            current = target
-            continue
-
-        current_u = current.upper()
-        target_u = target.upper()
-
-        if target_u in graph.get(current_u, set()):
-            resolved.append(target)
+    for i in range(1, len(parts)):
+        target = parts[i].upper()
+        if target in graph.get(current, set()):
+            down_path.append(target)
             current = target
         else:
-            path = find_path(graph, current, target)
-            if path and len(path) > 1:
-                resolved.extend(path[1:])
+            auto = find_path_down(graph, current, target)
+            if auto and len(auto) > 1:
+                down_path.extend(auto[1:])
                 current = target
             else:
                 return None
 
-    return resolved
+    upward = find_path_up(reverse_graph, down_path[0])
+
+    if upward and upward[-1] == down_path[0]:
+        full_path = upward + down_path[1:]
+    else:
+        full_path = upward + down_path
+    return full_path
 
 
 def format_backtrace(program: Program, bt_str: str) -> str:
     path = resolve_backtrace_path(program, bt_str)
     if not path:
         return f"Error: could not resolve backtrace path: {bt_str}"
+
+    graph = build_call_graph(program)
+    reverse_graph = build_reverse_graph(graph)
 
     proc_map: dict[str, Procedure] = {}
     for proc in program.procedures:
@@ -205,15 +225,15 @@ def format_backtrace(program: Program, bt_str: str) -> str:
             "name": proc.name,
             "source": src,
             "words": _proc_primary_words(proc),
-            "proc": proc,
         })
 
-    entry_proc = frames[0].get("proc")
-    graph = build_call_graph(program)
-    is_api = _is_api(program, graph, entry_proc) if entry_proc else True
+    n_frames = len(frames)
+    root_name = path[0].upper()
+    root_proc = proc_map.get(root_name)
+    is_root_main = root_proc is not None and root_proc.is_main
+    is_api = not is_root_main and not _has_callers(reverse_graph, root_name)
 
     global_w = _global_words(program)
-    n_frames = len(frames)
     marker_w = 3 * n_frames
     total_primary = sum(f["words"] for f in frames)
     total_accum = total_primary + marker_w + global_w
@@ -229,18 +249,24 @@ def format_backtrace(program: Program, bt_str: str) -> str:
 
     for i in range(n_frames - 1, -1, -1):
         f = frames[i]
-        frame_num = n_frames - 1 - i
         accumulated = sum(frames[j]["words"] for j in range(i + 1)) + 3 * (i + 1) + global_w
         label = ""
         if i == 0 and is_api:
             label = " (api)"
         name_field = f["name"] + label
         lines.append(
-            f"  #{frame_num:<3d} "
+            f"  #{i:<3d} "
             f"{f['source']:<14s} "
             f"{name_field:<{col_name}s} "
             f"{f['words']:>5d}w  [{accumulated:>5d}w]"
         )
+
+    lines.append(
+        f"  #global"
+        f"{'':<22s}"
+        f"{'':<{col_name}s}"
+        f"{'':>5s}   [{global_w:>5d}w]"
+    )
 
     lines.append("-" * 73)
     lines.append(
