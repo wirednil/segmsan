@@ -43,7 +43,13 @@ def _check_scan_carry(program: Program) -> list[Warning]:
 
 
 def _check_proc_scan(proc: Procedure, source_file: str, warnings: list[Warning]):
-    stmts = proc.body
+    _check_stmts_scan(proc.body, source_file, proc.name, warnings)
+    for subproc in proc.subprocs:
+        _check_proc_scan(subproc, source_file, warnings)
+
+
+def _check_stmts_scan(stmts: list[Statement], source_file: str,
+                       proc_name: str, warnings: list[Warning]):
     for i, stmt in enumerate(stmts):
         if isinstance(stmt, ScanStmt):
             has_carry_check = False
@@ -55,13 +61,17 @@ def _check_proc_scan(proc: Procedure, source_file: str, warnings: list[Warning])
                 warnings.append(Warning(
                     kind=WarningKind.SCAN_WITHOUT_CARRY_CHECK,
                     message=f"{stmt.direction} without subsequent $CARRY test "
-                            f"in procedure '{proc.name}'",
+                            f"in procedure '{proc_name}'",
                     loc=f"{source_file}{stmt.loc}",
                     suggestion="Test $CARRY after SCAN to handle the case where the search fails",
                 ))
-
-    for subproc in proc.subprocs:
-        _check_proc_scan(subproc, source_file, warnings)
+        elif isinstance(stmt, IfStmt):
+            _check_stmts_scan(stmt.then_body, source_file, proc_name, warnings)
+            _check_stmts_scan(stmt.else_body, source_file, proc_name, warnings)
+        elif isinstance(stmt, WhileStmt):
+            _check_stmts_scan(stmt.body, source_file, proc_name, warnings)
+        elif isinstance(stmt, ForStmt):
+            _check_stmts_scan(stmt.body, source_file, proc_name, warnings)
 
 
 def _references_carry(stmt: Statement) -> bool:

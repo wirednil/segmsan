@@ -86,14 +86,15 @@ class ScopeStack:
         )
         if self.current:
             self.current.variables[decl.name.upper()] = info
-            if decl.is_indirect:
-                self.current.primary_words += decl.pointer_word_size()
-                if decl.is_extended:
-                    self.current.extended_words += decl.data_word_size()
+            if not decl.is_equivalence:
+                if decl.is_indirect:
+                    self.current.primary_words += decl.pointer_word_size()
+                    if decl.is_extended:
+                        self.current.extended_words += decl.data_word_size()
+                    else:
+                        self.current.secondary_words += decl.data_word_size()
                 else:
-                    self.current.secondary_words += decl.data_word_size()
-            else:
-                self.current.primary_words += decl.word_size()
+                    self.current.primary_words += decl.word_size()
         return info
 
     def declare_param(self, param: ParamDecl, scope_kind: ScopeKind):

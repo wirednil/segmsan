@@ -95,7 +95,7 @@ class TestSuite:
 
     def test_storage_accounting(self):
         """TEST 3: Verify storage accounting is correct"""
-        print("\n[TEST 3] Storage Accounting (snprintf = 161w)")
+        print("\n[TEST 3] Storage Accounting (snprintf locals only, no param type decls)")
         print("-" * 70)
 
         warnings = self._get_warnings("test_printf.tal")
@@ -108,10 +108,10 @@ class TestSuite:
 
         if snprintf_warns:
             msg = snprintf_warns[0].get("message", "")
-            if "164" in msg and "127" in msg:
+            if "160" in msg and "127" in msg:
                 self.passed += 1
                 print(f"✅ PASS: snprintf storage correctly calculated")
-                print(f"   tmpbuf storage: 164 words (including pointer overhead)")
+                print(f"   tmpbuf storage: 160 words (params excluded from local count)")
                 print(f"   Message: {msg[:60]}...")
             else:
                 self.failed += 1

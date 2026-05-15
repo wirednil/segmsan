@@ -121,6 +121,29 @@ class Lexer:
     def _skip_comment(self) -> bool:
         ch = self._ch()
         if ch == "!":
+            next_ch = self._ch(1)
+            if next_ch and (next_ch.isalpha() or next_ch == "_"):
+                i = self.pos + 1
+                paren_depth = 0
+                valid_id = True
+                while i < len(self.source) and self.source[i] != "\n":
+                    c = self.source[i]
+                    if c == "(":
+                        paren_depth += 1
+                        i += 1
+                        continue
+                    if c == ")":
+                        paren_depth -= 1
+                        i += 1
+                        continue
+                    if c == "!" and paren_depth == 0:
+                        if valid_id:
+                            self._lex_bang_define()
+                            return True
+                        break
+                    if not (c.isalnum() or c in ("_", "^", "#")):
+                        valid_id = False
+                    i += 1
             while self.pos < len(self.source) and self.source[self.pos] != "\n":
                 self._advance()
             return True
@@ -129,6 +152,28 @@ class Lexer:
                 self._advance()
             return True
         return False
+
+    def _lex_bang_define(self):
+        line, col = self.line, self.col
+        self._advance()
+        chars = []
+        paren_depth = 0
+        while self.pos < len(self.source):
+            ch = self.source[self.pos]
+            if ch == "(":
+                paren_depth += 1
+                chars.append(self._advance())
+            elif ch == ")":
+                paren_depth -= 1
+                chars.append(self._advance())
+            elif ch == "!" and paren_depth == 0:
+                self._advance()
+                break
+            elif ch == "\n":
+                break
+            else:
+                chars.append(self._advance())
+        self._emit(TokenType.IDENT, "".join(chars), line, col)
 
     def _emit(self, ttype: TokenType, value: str, line: int, col: int):
         self.tokens.append(Token(ttype, value, line, col))
@@ -194,6 +239,59 @@ class Lexer:
             if self._ch() == "'":
                 self._advance()
             self._emit(TokenType.UADD, "'+'", line, col)
+            return
+        if self._ch() == "*":
+            self._advance()
+            if self._ch() == "'":
+                self._advance()
+            self._emit(TokenType.STAR, "'*'", line, col)
+            return
+        if self._ch() == "/":
+            self._advance()
+            if self._ch() == "'":
+                self._advance()
+            self._emit(TokenType.SLASH, "'/'", line, col)
+            return
+        if self._ch() == "\\":
+            self._advance()
+            if self._ch() == "'":
+                self._advance()
+            self._emit(TokenType.SLASH, "'\\'", line, col)
+            return
+        if self._ch() == "<":
+            if self._ch(1) == ">" and self._ch(2) == "'":
+                self._advance()
+                self._advance()
+                self._advance()
+                self._emit(TokenType.NEQ, "'<>'", line, col)
+                return
+            if self._ch(1) == "=" and self._ch(2) == "'":
+                self._advance()
+                self._advance()
+                self._advance()
+                self._emit(TokenType.LE, "'<='", line, col)
+                return
+            if self._ch(1) == "'":
+                self._advance()
+                self._advance()
+                self._emit(TokenType.LT, "'<'", line, col)
+                return
+        if self._ch() == ">":
+            if self._ch(1) == "=" and self._ch(2) == "'":
+                self._advance()
+                self._advance()
+                self._advance()
+                self._emit(TokenType.GE, "'>='", line, col)
+                return
+            if self._ch(1) == "'":
+                self._advance()
+                self._advance()
+                self._emit(TokenType.GT, "'>'", line, col)
+                return
+        if self._ch() == "=" and self._ch(1) == "'":
+            self._advance()
+            self._advance()
+            self._emit(TokenType.EQ, "'='", line, col)
             return
 
         char_val = []

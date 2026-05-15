@@ -6,10 +6,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from segmsan.lexer import Lexer
-from segmsan.parser import Parser
-from segmsan.checks import run_all_checks
-from segmsan.report import format_report, WarningKind
+from tal_analyzer.lexer import Lexer
+from tal_analyzer.parser import Parser
+from tal_analyzer.checks import run_all_checks
+from tal_analyzer.report import format_report, WarningKind
 
 
 def test_lexer():

@@ -395,6 +395,12 @@ class Parser:
                 self._parse_struct_def(locals_)
                 continue
             if self._is_type_token():
+                nxt = self._peek()
+                if nxt.type == TokenType.KEYWORD and nxt.value.upper() == "SUBPROC":
+                    self._advance()
+                    sub = self._parse_subprocedure()
+                    subprocs.append(sub)
+                    continue
                 locals_.extend(self._parse_var_decls())
                 continue
             if self._match_keyword("LITERAL"):
@@ -415,6 +421,9 @@ class Parser:
             stmt = self._parse_statement()
             if stmt:
                 body.append(stmt)
+
+        param_names = {p.name.upper() for p in params}
+        locals_ = [v for v in locals_ if v.name.upper() not in param_names]
 
         proc = Procedure(
             name=name, loc=loc, params=params, locals_=locals_,
@@ -467,6 +476,12 @@ class Parser:
                 self._parse_struct_def(locals_)
                 continue
             if self._is_type_token():
+                nxt = self._peek()
+                if nxt.type == TokenType.KEYWORD and nxt.value.upper() == "SUBPROC":
+                    self._advance()
+                    sub = self._parse_subprocedure()
+                    subprocs.append(sub)
+                    continue
                 locals_.extend(self._parse_var_decls())
                 continue
             if self._match_keyword("LITERAL"):
@@ -478,6 +493,9 @@ class Parser:
             stmt = self._parse_statement()
             if stmt:
                 body.append(stmt)
+
+        param_names = {p.name.upper() for p in params}
+        locals_ = [v for v in locals_ if v.name.upper() not in param_names]
 
         proc = Procedure(name=name, loc=loc, params=params, locals_=locals_,
                          body=body, subprocs=subprocs)
@@ -593,6 +611,13 @@ class Parser:
             elif self._cur().type == TokenType.KEYWORD:
                 name = self._advance().value
 
+            if self._cur().type == TokenType.LPAREN:
+                self._advance()
+                while self._cur().type not in (TokenType.RPAREN, TokenType.EOF):
+                    self._advance()
+                if self._cur().type == TokenType.RPAREN:
+                    self._advance()
+
             array_bounds = None
             if self._cur().type == TokenType.LBRACK:
                 self._advance()
@@ -631,6 +656,14 @@ class Parser:
                 elif self._cur().type in (TokenType.IDENT, TokenType.KEYWORD):
                     is_equivalence = True
                     equivalence_target = self._advance().value
+                elif self._cur().type == TokenType.CHAR_LIT and self._cur().value.upper() == "L":
+                    is_equivalence = True
+                    equivalence_target = "L"
+                    self._advance()
+                    if self._cur().type == TokenType.MINUS:
+                        self._advance()
+                        if self._cur().type == TokenType.NUMBER:
+                            self._advance()
                 elif self._cur().type == TokenType.MINUS:
                     self._advance()
                     if self._cur().type == TokenType.IDENT:
@@ -746,6 +779,10 @@ class Parser:
         loc = SourceLocation(self._cur().line, self._cur().col)
         self._advance()
         cond = self._try_parse_expr()
+        if cond is None and self._cur().type in (TokenType.NEQ, TokenType.EQ,
+                                                   TokenType.LT, TokenType.GT,
+                                                   TokenType.LE, TokenType.GE):
+            cond = LiteralExpr(value=self._advance().value, loc=SourceLocation(self._cur().line))
         if self._match_keyword("THEN"):
             self._advance()
         then_body = self._parse_simple_stmt_list()
@@ -963,6 +1000,11 @@ class Parser:
         if t.type == TokenType.LPAREN:
             self._advance()
             inner = self._try_parse_expr()
+            if inner and self._cur().type in (TokenType.MOVE_LR, TokenType.ASSIGN):
+                self._advance()
+                rhs = self._try_parse_expr()
+                if rhs:
+                    inner = BinOpExpr(op=":=", left=inner, right=rhs)
             if self._cur().type == TokenType.RPAREN:
                 self._advance()
             return inner
@@ -976,18 +1018,22 @@ class Parser:
                     self._advance()
                 return CallExpr(name=name, args=call_args, loc=SourceLocation(t.line, t.col))
             expr: Expr = VarExpr(name=name, loc=SourceLocation(t.line, t.col))
-            if self._cur().type == TokenType.DOT:
-                self._advance()
-                if self._cur().type in (TokenType.IDENT, TokenType.KEYWORD):
-                    field_name = self._advance().value
-                    expr = FieldExpr(obj=expr, field_name=field_name, loc=SourceLocation(t.line, t.col))
-            if self._cur().type == TokenType.LBRACK:
-                self._advance()
-                idx = self._try_parse_expr()
-                if self._cur().type == TokenType.RBRACK:
+            while True:
+                if self._cur().type == TokenType.DOT:
                     self._advance()
-                if idx:
-                    expr = IndexExpr(array=expr, index=idx, loc=SourceLocation(t.line, t.col))
+                    field_name = ""
+                    if self._cur().type in (TokenType.IDENT, TokenType.KEYWORD):
+                        field_name = self._advance().value
+                    expr = FieldExpr(obj=expr, field_name=field_name, loc=SourceLocation(t.line, t.col))
+                elif self._cur().type == TokenType.LBRACK:
+                    self._advance()
+                    idx = self._try_parse_expr()
+                    if self._cur().type == TokenType.RBRACK:
+                        self._advance()
+                    if idx:
+                        expr = IndexExpr(array=expr, index=idx, loc=SourceLocation(t.line, t.col))
+                else:
+                    break
             return expr
 
         return None
@@ -1021,6 +1067,8 @@ class Parser:
             if self._expr_calls(stmt.source, name):
                 return True
         if isinstance(stmt, IfStmt):
+            if hasattr(stmt, 'condition') and self._expr_calls(stmt.condition, name):
+                return True
             for s in stmt.then_body + stmt.else_body:
                 if self._stmt_calls(s, name):
                     return True
