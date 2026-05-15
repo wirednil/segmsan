@@ -70,13 +70,18 @@ def main():
 
     import_tree = resolve_imports(
         program, base_dir,
-        skip_missing=args.skip_missing_sources,
+        skip_missing=args.skip_missing_sources or bool(args.backtrace),
         search_dirs=args.import_dirs,
     )
 
     resolve_templates(program)
 
     warnings = run_all_checks(program)
+
+    if args.backtrace:
+        from .backtrace import format_backtrace
+        print(format_backtrace(program, args.backtrace))
+        return
 
     if args.strict:
         warnings = [w for w in warnings if w.severity in (Severity.CRITICAL, Severity.HIGH)]

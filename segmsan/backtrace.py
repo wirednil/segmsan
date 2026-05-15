@@ -214,6 +214,7 @@ def format_backtrace(program: Program, bt_str: str) -> str:
             frames.append({
                 "name": name,
                 "source": "*",
+                "line": 0,
                 "words": 0,
             })
             continue
@@ -221,9 +222,11 @@ def format_backtrace(program: Program, bt_str: str) -> str:
             src = "*"
         else:
             src = os.path.basename(program.source_file) if program.source_file else "*"
+        line = proc.loc.line if proc.loc else 0
         frames.append({
             "name": proc.name,
             "source": src,
+            "line": line,
             "words": _proc_primary_words(proc),
         })
 
@@ -238,42 +241,61 @@ def format_backtrace(program: Program, bt_str: str) -> str:
     total_primary = sum(f["words"] for f in frames)
     total_accum = total_primary + marker_w + global_w
 
-    path_display = " -> ".join(f["name"] for f in frames)
+    bp_idx = n_frames - 1
+    entry_label = "MAIN" if is_root_main else "API"
 
     lines: list[str] = []
-    lines.append(f"Call backtrace: {path_display}")
+    lines.append(f"Backtrace - Breakpoint en cadena: {bt_str}")
     lines.append("=" * 73)
 
-    max_name = max(len(f["name"]) for f in frames)
-    col_name = max(max_name + 10, 25)
+    col_num = 5
+    col_src = 22
+    col_name = max(len(f["name"]) + 2 for f in frames)
+    col_name = max(col_name, 12)
+
+    lines.append(
+        f"{'frame':<{col_num}s} "
+        f"{'procedures':<{col_name}s} "
+        f"{'source':<{col_src}s} "
+        f"{'per frame':>10s}"
+    )
+    lines.append("=" * 73)
 
     for i in range(n_frames - 1, -1, -1):
         f = frames[i]
         accumulated = sum(frames[j]["words"] for j in range(i + 1)) + 3 * (i + 1) + global_w
+
+        if f["source"] == "*" or f["line"] == 0:
+            src_str = f"{f['source']}"
+        else:
+            src_str = f"{f['source']}:{f['line']}"
+
+        bp_marker = "   ← breakpoint" if i == bp_idx else ""
+        star = "*" if f["source"] == "*" else " "
         label = ""
         if i == 0 and is_api:
             label = " (api)"
+
         name_field = f["name"] + label
         lines.append(
-            f"  #{i:<3d} "
-            f"{f['source']:<14s} "
+            f"  #{i:<3d}{star}"
             f"{name_field:<{col_name}s} "
-            f"{f['words']:>5d}w  [{accumulated:>5d}w]"
+            f"{src_str:<{col_src}s} "
+            f"{f['words']:>4d}w  [{accumulated:>4d}w]{bp_marker}"
         )
 
     lines.append(
         f"  #global"
-        f"{'':<22s}"
-        f"{'':<{col_name}s}"
-        f"{'':>5s}   [{global_w:>5d}w]"
+        f"{'':<{col_name - 5}s} "
+        f"{'':<{col_src}s} "
+        f"{global_w:>4d}w"
     )
 
+    pct = (total_accum / COMBINED_LIMIT) * 100
     lines.append("-" * 73)
-    lines.append(
-        f"      markers (3w x {n_frames}){marker_w:>4d}w"
-        f"    global{global_w:>4d}w"
-        f"    total{total_accum:>5d}w/{COMBINED_LIMIT}w"
-    )
+    lines.append(f"  Total: {total_accum}w / {COMBINED_LIMIT}w   ({pct:.1f}% usado)")
+    lines.append("")
+    lines.append(f"  Entry point: {frames[0]['name']} → Etiquetado como: {entry_label}")
     lines.append("=" * 73)
 
     return "\n".join(lines)
