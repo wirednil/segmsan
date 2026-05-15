@@ -15,7 +15,7 @@ from .ast_nodes import (
 )
 from .scope import ScopeStack, SCOPE_LIMITS
 
-COMBINED_LIMIT = 65536
+COMBINED_LIMIT = 32768
 
 
 def build_call_graph(program: Program) -> dict[str, set[str]]:
