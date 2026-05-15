@@ -164,3 +164,60 @@ def _check_upper_32k_locals(proc: Procedure, source_file: str) -> list[Warning]:
                     suggestion="Use indirect allocation (dot) for large arrays",
                 ))
     return warnings
+
+
+def format_storage_summary(program: Program) -> str:
+    lines: list[str] = []
+    lines.append("=" * 60)
+    lines.append("STORAGE SUMMARY")
+    lines.append("=" * 60)
+    lines.append(f"{'Scope':<20s} {'Primary':>12s} {'Secondary':>12s} {'Extended':>12s} {'Combined':>14s}")
+    lines.append("-" * 60)
+
+    scope = ScopeStack()
+    scope.push(ScopeKind.GLOBAL)
+    for decl in program.globals_:
+        scope.declare(decl, ScopeKind.GLOBAL)
+
+    gl = scope.levels[0]
+    lines.append(
+        f"{'GLOBAL':<20s} "
+        f"{gl.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.GLOBAL]:<6d} "
+        f"{gl.secondary_words:>10d}w "
+        f"{gl.extended_words:>10d}w "
+        f"{gl.combined_words:>6d}/{COMBINED_LIMIT}w"
+    )
+    scope.pop()
+
+    for proc in program.procedures:
+        scope.push(ScopeKind.LOCAL)
+        for decl in proc.locals_:
+            scope.declare(decl, ScopeKind.LOCAL)
+
+        lv = scope.current
+        lines.append(
+            f"{proc.name:<20s} "
+            f"{lv.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.LOCAL]:<6d} "
+            f"{lv.secondary_words:>10d}w "
+            f"{lv.extended_words:>10d}w "
+            f"{lv.combined_words:>6d}/{COMBINED_LIMIT}w"
+        )
+        scope.pop()
+
+        for sp in proc.subprocs:
+            scope.push(ScopeKind.SUBLOCAL)
+            for decl in sp.locals_:
+                scope.declare(decl, ScopeKind.SUBLOCAL)
+
+            sv = scope.current
+            lines.append(
+                f"{sp.name:<20s} "
+                f"{sv.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.SUBLOCAL]:<6d} "
+                f"{sv.secondary_words:>10d}w "
+                f"{sv.extended_words:>10d}w "
+                f"{sv.combined_words:>6d}/{COMBINED_LIMIT}w"
+            )
+            scope.pop()
+
+    lines.append("=" * 60)
+    return "\n".join(lines)

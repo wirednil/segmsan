@@ -15,16 +15,24 @@ Inspired by LLVM sanitizers (ASan, MSan, TSan), SEGMSAN detects memory errors in
 | **Type safety** | FIXED precision loss, STRING by-value mismatch, readonly modification |
 | **Other** | $COMP misuse, condition code clobber, array bounds, padding waste |
 
-24 rules across 4 severity levels (CRITICAL, HIGH, MEDIUM, LOW).
+ 26 rules across 4 severity levels (CRITICAL, HIGH, MEDIUM, LOW).
 
 ## Usage
 
 ```bash
-python3 -m segmsan source.tal
-python3 -m segmsan source.tal --strict   # include LOW severity
+python3 -m segmsan source.tal                  # analyze with all checks
+python3 -m segmsan source.tal --strict         # only CRITICAL + HIGH
+python3 -m segmsan source.tal --padding        # include padding waste (LOW)
+python3 -m segmsan source.tal -f json          # machine-readable output
+python3 -m segmsan source.tal --no-preprocess  # skip DEFINE expansion
+python3 -m segmsan source.tal --skip-missing-sources  # suppress missing SOURCE warnings
 ```
 
-Output is diagnostic-style with colors, carets, grouped summaries, and fix suggestions.
+Output includes:
+- Colored diagnostic-style warnings with source carets
+- DEFINE macro expansion context (original call + expanded code)
+- Per-procedure storage summary (primary/secondary/extended/combined words)
+- Grouped warning counts by severity
 
 ## Requirements
 
@@ -39,14 +47,25 @@ segmsan/
   preprocessor.py   DEFINE expansion + SOURCE import + macro tracking
   lexer.py          TAL tokenizer
   parser.py         Hand-written recursive descent parser
-  ast_nodes.py      AST types + storage calculation
+  ast_nodes.py      AST types + storage calculation (primary/secondary/extended)
   scope.py          Scope tracking (global/local/sublocal)
   dataflow.py       Taint analysis for pointer lifetime tracking
   interproc.py      Interprocedural call graph + procedure summaries
   resolver.py       Import resolution for external SOURCE files
   system_stubs.py   System procedure signatures
-  report.py         Diagnostic output formatting
-  checks/           Individual rule implementations (11 modules)
+  report.py         Diagnostic output formatting + expansion context
+  checks/           Individual rule implementations (12 modules)
+    bounds.py       Rule 17: array bounds (IF/WHILE-guarded suppression)
+    storage.py      Rules 3/4/5/25/26: overflow + secondary + sublocal indirect
+    equivalence.py  Rule 18: EQUIVALENCE cross-addressing
+    cc_clobber.py   Rule 21: condition code clobber
+    ext_ptr.py      Rule 23: extended pointer misuse
+    fixed.py        Rule 15: FIXED precision loss
+    dangling.py     Rule 12: dangling pointers
+    readonly.py     Rule 14: readonly modification
+    control_flow.py Rules 9/13: recursion + missing debug
+    misc.py         Rules 1/16/22: misc checks
+    padding.py      Rules 19/20: padding waste (off by default)
   data/             system_procs.json (609 Guardian procedure signatures)
   tests/            Test suite + sample TAL files
 ```
@@ -54,7 +73,7 @@ segmsan/
 ## Running Tests
 
 ```bash
-python3 run_custom_tests.py
+python3 run_custom_tests.py    # 5/5 expected
 ```
 
 ## TAL Memory Model

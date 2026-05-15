@@ -91,13 +91,16 @@ class CallGraph:
         )
 
         for decl in proc.locals_:
-            sz = decl.word_size()
             if decl.is_indirect:
-                summary.locals_indirect_words += sz
+                summary.locals_indirect_words += decl.data_word_size()
             else:
-                summary.locals_direct_words += sz
+                summary.locals_direct_words += decl.word_size()
 
-        summary.frame_size_words = summary.locals_direct_words + len(proc.params) + 3
+        summary.frame_size_words = (
+            summary.locals_direct_words
+            + sum(1 if d.is_indirect and not d.is_extended else (2 if d.is_indirect else 0) for d in proc.locals_)
+            + len(proc.params) + 3
+        )
 
         local_names = {d.name.upper() for d in proc.locals_}
         param_name_set = {p.name.upper() for p in proc.params}
@@ -271,7 +274,8 @@ class CallGraph:
             s = summary
             lines.append(f"PROC {s.name}:")
             lines.append(f"  Frame: {s.frame_size_words}w "
-                         f"(direct={s.locals_direct_words}w + {len(s.param_names)} params + 3 marker)")
+                         f"(direct={s.locals_direct_words}w, indirect_data={s.locals_indirect_words}w, "
+                         f"{len(s.param_names)} params + 3 marker)")
             lines.append(f"  Calls: {s.calls}")
             lines.append(f"  Stores refs globally: {s.stores_refs_globally}")
             if s.ref_params_stored:

@@ -85,6 +85,10 @@ def main():
                                expansions=expansions, original_lines=original_lines)
         print(report)
 
+        from .checks.storage import format_storage_summary
+        print()
+        print(format_storage_summary(program))
+
     if any(w.severity == Severity.CRITICAL for w in warnings):
         sys.exit(1)
 

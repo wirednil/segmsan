@@ -583,6 +583,9 @@ class Parser:
             if self._cur().type == TokenType.DOT:
                 is_indirect = True
                 self._advance()
+                if self._match_keyword("EXT"):
+                    is_ext = True
+                    self._advance()
 
             name = ""
             if self._cur().type == TokenType.IDENT:
