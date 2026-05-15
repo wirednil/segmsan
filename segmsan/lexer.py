@@ -144,7 +144,15 @@ class Lexer:
                     if not (c.isalnum() or c in ("_", "^", "#")):
                         valid_id = False
                     i += 1
-            while self.pos < len(self.source) and self.source[self.pos] != "\n":
+
+            self._advance()
+            while self.pos < len(self.source):
+                c = self.source[self.pos]
+                if c == "\n":
+                    break
+                if c == "!":
+                    self._advance()
+                    break
                 self._advance()
             return True
         if ch == "-" and self._ch(1) == "-":
