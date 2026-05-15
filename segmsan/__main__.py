@@ -9,8 +9,10 @@ from .lexer import Lexer
 from .parser import Parser
 from .checks import run_all_checks
 from .report import format_report, format_json, Severity, WarningKind
-from .preprocessor import preprocess, collect_defines, collect_defines_from_file, expand_macros
-from .resolver import resolve_imports
+from .preprocessor import (
+    preprocess, collect_defines, collect_defines_recursive, expand_macros,
+)
+from .resolver import resolve_imports, format_import_tree
 
 
 def main():
@@ -31,6 +33,9 @@ def main():
                     help="Skip DEFINE macro expansion")
     ap.add_argument("--padding", action="store_true",
                     help="Enable padding/waste analysis (LOW severity, off by default)")
+    ap.add_argument("-I", "--import-dir", action="append", default=[],
+                    dest="import_dirs",
+                    help="Additional search directory for ?SOURCE imports (repeatable)")
     args = ap.parse_args()
 
     try:
@@ -44,7 +49,7 @@ def main():
     expansions = []
 
     if not args.no_preprocess:
-        source, expansions = _preprocess_with_imports(source, base_dir)
+        source, expansions = _preprocess_recursive(source, base_dir, args.import_dirs)
 
     lexer = Lexer(source)
     tokens = lexer.tokenize()
@@ -61,7 +66,11 @@ def main():
         print(f"Parse error: {e}", file=sys.stderr)
         sys.exit(2)
 
-    resolve_imports(program, base_dir, skip_missing=args.skip_missing_sources)
+    import_tree = resolve_imports(
+        program, base_dir,
+        skip_missing=args.skip_missing_sources,
+        search_dirs=args.import_dirs,
+    )
 
     warnings = run_all_checks(program)
 
@@ -89,27 +98,19 @@ def main():
         print()
         print(format_storage_summary(program))
 
+        if import_tree:
+            print()
+            print(format_import_tree(import_tree, args.source))
+
     if any(w.severity == Severity.CRITICAL for w in warnings):
         sys.exit(1)
 
 
-def _preprocess_with_imports(source: str, base_dir: str):
+def _preprocess_recursive(source: str, base_dir: str,
+                          search_dirs: list[str]):
     macros, cleaned = collect_defines(source)
-
-    for m in re.finditer(r'SOURCE\s+([^\s,(]+)', source, re.IGNORECASE):
-        path = m.group(1).strip()
-        if path.upper().startswith("$SYSTEM."):
-            continue
-        name = path.split(".")[-1]
-        for ext in [".tal", ""]:
-            for c in [
-                os.path.join(base_dir, name.lower() + ext),
-                os.path.join(base_dir, name + ext),
-            ]:
-                if os.path.isfile(c):
-                    macros.extend(collect_defines_from_file(c))
-                    break
-
+    macros.extend(
+        collect_defines_recursive(source, base_dir, search_dirs))
     _, cleaned = collect_defines(cleaned)
     return expand_macros(cleaned, macros)
 

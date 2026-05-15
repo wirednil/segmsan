@@ -12,6 +12,7 @@ Expansion is repeated until no more macros are found (handles nesting).
 """
 
 from __future__ import annotations
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -252,13 +253,55 @@ def _expand_one_pass(source: str, macro_map: dict[str, DefineMacro]) -> tuple[st
     return result, expansions
 
 
-def collect_defines_from_file(filepath: str) -> list[DefineMacro]:
+def collect_defines_from_file(filepath: str) -> tuple[list[DefineMacro], str]:
     try:
         with open(filepath) as f:
             source = f.read()
     except OSError:
-        return []
+        return [], ""
     macros, _ = collect_defines(source)
+    return macros, source
+
+
+def collect_defines_recursive(source: str, base_dir: str,
+                              search_dirs: list[str] | None = None,
+                              _visited: set[str] | None = None) -> list[DefineMacro]:
+    all_dirs = [base_dir] + (search_dirs or [])
+    if _visited is None:
+        _visited = set()
+
+    macros, _ = collect_defines(source)
+
+    for m in re.finditer(r'SOURCE\s+([^\s,(]+)', source, re.IGNORECASE):
+        path = m.group(1).strip()
+        if path.upper().startswith("$SYSTEM.") or path.upper().startswith("$RTL"):
+            continue
+        name = path.split(".")[-1]
+        for d in all_dirs:
+            found = False
+            for ext in [".tal", ""]:
+                for c in [
+                    os.path.join(d, name.lower() + ext),
+                    os.path.join(d, name + ext),
+                ]:
+                    if os.path.isfile(c):
+                        abs_c = os.path.abspath(c)
+                        if abs_c not in _visited:
+                            _visited.add(abs_c)
+                            sub_macros, sub_source = collect_defines_from_file(c)
+                            macros.extend(sub_macros)
+                            if sub_source:
+                                macros.extend(
+                                    collect_defines_recursive(
+                                        sub_source, os.path.dirname(abs_c),
+                                        search_dirs, _visited))
+                        found = True
+                        break
+                if found:
+                    break
+            if found:
+                break
+
     return macros
 
 
@@ -272,7 +315,7 @@ def preprocess(source: str, import_dirs: list[str] | None = None) -> str:
                 for fname in os.listdir(dir_path):
                     if fname.lower().endswith(".tal"):
                         fpath = os.path.join(dir_path, fname)
-                        macros.extend(collect_defines_from_file(fpath))
+                        macros.extend(collect_defines_from_file(fpath)[0])
             except OSError:
                 pass
 

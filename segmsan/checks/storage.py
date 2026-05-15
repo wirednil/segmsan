@@ -168,11 +168,28 @@ def _check_upper_32k_locals(proc: Procedure, source_file: str) -> list[Warning]:
 
 def format_storage_summary(program: Program) -> str:
     lines: list[str] = []
-    lines.append("=" * 60)
+    W = 81
+    lines.append("=" * W)
     lines.append("STORAGE SUMMARY")
-    lines.append("=" * 60)
-    lines.append(f"{'Scope':<20s} {'Primary':>12s} {'Secondary':>12s} {'Extended':>12s} {'Combined':>14s}")
-    lines.append("-" * 60)
+    lines.append("=" * W)
+    lines.append(
+        f"{'Scope':<32s}| {'Primary':>7s} | {'Secondary':>9s} | {'Extend.':>7s} | {'Combined':>13s} "
+    )
+    lines.append("-" * 32 + "+" + "-" * 9 + "+" + "-" * 11 + "+" + "-" * 9 + "+" + "-" * 15)
+
+    def _fmt_name(name: str) -> str:
+        if len(name) > 32:
+            return name[:30] + ".."
+        return name
+
+    def _row(name: str, pw: int, plim: int, sw: int, ew: int, cw: int) -> str:
+        return (
+            f"{_fmt_name(name):<32s}"
+            f"| {f'{pw}/{plim}w':>7s} "
+            f"| {f'{sw}w':>9s} "
+            f"| {f'{ew}w':>7s} "
+            f"| {f'{cw}/{COMBINED_LIMIT}w':>13s} "
+        )
 
     scope = ScopeStack()
     scope.push(ScopeKind.GLOBAL)
@@ -180,13 +197,10 @@ def format_storage_summary(program: Program) -> str:
         scope.declare(decl, ScopeKind.GLOBAL)
 
     gl = scope.levels[0]
-    lines.append(
-        f"{'GLOBAL':<20s} "
-        f"{gl.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.GLOBAL]:<6d} "
-        f"{gl.secondary_words:>10d}w "
-        f"{gl.extended_words:>10d}w "
-        f"{gl.combined_words:>6d}/{COMBINED_LIMIT}w"
-    )
+    lines.append(_row("GLOBAL", gl.primary_words,
+                       SCOPE_LIMITS[ScopeKind.GLOBAL],
+                       gl.secondary_words, gl.extended_words,
+                       gl.combined_words))
     scope.pop()
 
     for proc in program.procedures:
@@ -195,13 +209,10 @@ def format_storage_summary(program: Program) -> str:
             scope.declare(decl, ScopeKind.LOCAL)
 
         lv = scope.current
-        lines.append(
-            f"{proc.name:<20s} "
-            f"{lv.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.LOCAL]:<6d} "
-            f"{lv.secondary_words:>10d}w "
-            f"{lv.extended_words:>10d}w "
-            f"{lv.combined_words:>6d}/{COMBINED_LIMIT}w"
-        )
+        lines.append(_row(proc.name, lv.primary_words,
+                           SCOPE_LIMITS[ScopeKind.LOCAL],
+                           lv.secondary_words, lv.extended_words,
+                           lv.combined_words))
         scope.pop()
 
         for sp in proc.subprocs:
@@ -210,14 +221,11 @@ def format_storage_summary(program: Program) -> str:
                 scope.declare(decl, ScopeKind.SUBLOCAL)
 
             sv = scope.current
-            lines.append(
-                f"{sp.name:<20s} "
-                f"{sv.primary_words:>4d}/{SCOPE_LIMITS[ScopeKind.SUBLOCAL]:<6d} "
-                f"{sv.secondary_words:>10d}w "
-                f"{sv.extended_words:>10d}w "
-                f"{sv.combined_words:>6d}/{COMBINED_LIMIT}w"
-            )
+            lines.append(_row(sp.name, sv.primary_words,
+                               SCOPE_LIMITS[ScopeKind.SUBLOCAL],
+                               sv.secondary_words, sv.extended_words,
+                               sv.combined_words))
             scope.pop()
 
-    lines.append("=" * 60)
+    lines.append("=" * W)
     return "\n".join(lines)

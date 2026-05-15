@@ -332,6 +332,19 @@ class SourceImport:
 
 
 @dataclass
+class ImportNode:
+    source_path: str
+    resolved_path: str | None = None
+    names: list[str] = field(default_factory=list)
+    is_system: bool = False
+    n_procs: int = 0
+    n_globals: int = 0
+    n_literals: int = 0
+    n_defines: int = 0
+    children: list[ImportNode] = field(default_factory=list)
+
+
+@dataclass
 class Procedure:
     name: str
     loc: SourceLocation
