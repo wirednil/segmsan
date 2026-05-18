@@ -45,6 +45,22 @@ class TokenType(Enum):
     USHR = auto()
     USUB = auto()
     UADD = auto()
+    UMUL = auto()
+    UDIV = auto()
+    UMOD = auto()
+    ULT = auto()
+    UEQ = auto()
+    UGT = auto()
+    ULE = auto()
+    UGE = auto()
+    UNE = auto()
+    BASE_P = auto()
+    BASE_G = auto()
+    BASE_L = auto()
+    BASE_S = auto()
+    BASE_SG = auto()
+    DOT_SG = auto()
+    DOT_DOT = auto()
     SHL = auto()
     SHR = auto()
     NEWLINE = auto()
@@ -252,55 +268,77 @@ class Lexer:
             self._advance()
             if self._ch() == "'":
                 self._advance()
-            self._emit(TokenType.STAR, "'*'", line, col)
+            self._emit(TokenType.UMUL, "'*'", line, col)
             return
         if self._ch() == "/":
             self._advance()
             if self._ch() == "'":
                 self._advance()
-            self._emit(TokenType.SLASH, "'/'", line, col)
+            self._emit(TokenType.UDIV, "'/'", line, col)
             return
         if self._ch() == "\\":
             self._advance()
             if self._ch() == "'":
                 self._advance()
-            self._emit(TokenType.SLASH, "'\\'", line, col)
+            self._emit(TokenType.UMOD, "'\\'", line, col)
             return
         if self._ch() == "<":
             if self._ch(1) == ">" and self._ch(2) == "'":
                 self._advance()
                 self._advance()
                 self._advance()
-                self._emit(TokenType.NEQ, "'<>'", line, col)
+                self._emit(TokenType.UNE, "'<>'", line, col)
                 return
             if self._ch(1) == "=" and self._ch(2) == "'":
                 self._advance()
                 self._advance()
                 self._advance()
-                self._emit(TokenType.LE, "'<='", line, col)
+                self._emit(TokenType.ULE, "'<='", line, col)
                 return
             if self._ch(1) == "'":
                 self._advance()
                 self._advance()
-                self._emit(TokenType.LT, "'<'", line, col)
+                self._emit(TokenType.ULT, "'<'", line, col)
                 return
         if self._ch() == ">":
             if self._ch(1) == "=" and self._ch(2) == "'":
                 self._advance()
                 self._advance()
                 self._advance()
-                self._emit(TokenType.GE, "'>='", line, col)
+                self._emit(TokenType.UGE, "'>='", line, col)
                 return
             if self._ch(1) == "'":
                 self._advance()
                 self._advance()
-                self._emit(TokenType.GT, "'>'", line, col)
+                self._emit(TokenType.UGT, "'>'", line, col)
                 return
         if self._ch() == "=" and self._ch(1) == "'":
             self._advance()
             self._advance()
-            self._emit(TokenType.EQ, "'='", line, col)
+            self._emit(TokenType.UEQ, "'='", line, col)
             return
+
+        # Base address symbols: 'SG', 'S', 'G', 'L', 'P'
+        next_ch = self._ch()
+        if next_ch and next_ch.upper() in ("P", "G", "L", "S"):
+            upper = next_ch.upper()
+            if upper == "S" and self._ch(1) and self._ch(1).upper() == "G" and self._ch(2) == "'":
+                self._advance()
+                self._advance()
+                self._advance()
+                self._emit(TokenType.BASE_SG, "'SG'", line, col)
+                return
+            if self._ch(1) == "'":
+                self._advance()
+                self._advance()
+                _base_map = {
+                    "P": TokenType.BASE_P,
+                    "G": TokenType.BASE_G,
+                    "L": TokenType.BASE_L,
+                    "S": TokenType.BASE_S,
+                }
+                self._emit(_base_map[upper], f"'{next_ch}'", line, col)
+                return
 
         char_val = []
         if self.pos < len(self.source) and self.source[self.pos] not in ("'", "\n"):
@@ -316,21 +354,52 @@ class Lexer:
 
     def _lex_number(self):
         line, col = self.line, self.col
+
+        # Prefixed: %, %B, %H — reads all alphanumeric chars
         if self.source[self.pos] == "%":
             self._advance()
-            digits = []
-            while self.pos < len(self.source) and (self.source[self.pos].isalnum() or self.source[self.pos] == "_"):
-                digits.append(self._advance())
-            self._emit(TokenType.NUMBER, "%" + "".join(digits), line, col)
+            chars = []
+            while self.pos < len(self.source) and self.source[self.pos].isalnum():
+                chars.append(self._advance())
+            num = "%" + "".join(chars)
+            # INT(32) hex suffix: %H1234%D or %h1234%d
+            if self._ch() == "%" and self._ch(1) and self._ch(1).lower() == "d":
+                self._advance()
+                num += "%" + self._advance()
+            self._emit(TokenType.NUMBER, num, line, col)
             return
-        digits = []
+
+        # Decimal — lookahead to detect float: digit+ . digit+ (E|L|F) exponent?
+        i = self.pos
+        while i < len(self.source) and self.source[i].isdigit():
+            i += 1
+        is_float = False
+        if i < len(self.source) and self.source[i] == ".":
+            j = i + 1
+            while j < len(self.source) and self.source[j].isdigit():
+                j += 1
+            if j > i + 1 and j < len(self.source) and self.source[j].lower() in ("e", "l", "f"):
+                is_float = True
+
+        num = ""
         while self.pos < len(self.source) and self.source[self.pos].isdigit():
-            digits.append(self._advance())
-        num = "".join(digits)
-        if self._ch() and self._ch().lower() in ("f", "r", "e", "l"):
-            suffix = self._advance()
-            self._emit(TokenType.NUMBER, num + suffix, line, col)
-            return
+            num += self._advance()
+
+        if is_float:
+            num += self._advance()  # "."
+            while self.pos < len(self.source) and self.source[self.pos].isdigit():
+                num += self._advance()
+
+        # Type suffix: D=INT(32), F=FIXED, E=REAL, L=REAL(64)
+        if self._ch() and self._ch().lower() in ("d", "f", "e", "l"):
+            num += self._advance()
+            # REAL / REAL(64): consume optional sign + exponent digits
+            if num[-1].lower() in ("e", "l"):
+                if self._ch() in ("+", "-"):
+                    num += self._advance()
+                while self.pos < len(self.source) and self.source[self.pos].isdigit():
+                    num += self._advance()
+
         self._emit(TokenType.NUMBER, num, line, col)
 
     def _lex_ident_or_keyword(self):
@@ -431,7 +500,17 @@ class Lexer:
                 continue
             if ch == ".":
                 self._advance()
-                self._emit(TokenType.DOT, ".", line, col)
+                if self._ch() == ".":
+                    self._advance()
+                    self._emit(TokenType.DOT_DOT, "..", line, col)
+                elif (self._ch() and self._ch().upper() == "S"
+                        and self._ch(1) and self._ch(1).upper() == "G"
+                        and not (self._ch(2) and (self._ch(2).isalnum() or self._ch(2) in ("_", "^")))):
+                    self._advance()
+                    self._advance()
+                    self._emit(TokenType.DOT_SG, ".SG", line, col)
+                else:
+                    self._emit(TokenType.DOT, ".", line, col)
                 continue
             if ch == ";":
                 self._advance()

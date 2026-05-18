@@ -44,7 +44,6 @@ class WarningKind(Enum):
     SCAN_WITHOUT_CARRY_CHECK = auto()
     READONLY_ARRAY_MODIFICATION = auto()
     UPPER_32K_WITHOUT_PTR = auto()
-    GLOBAL_PTR_FROM_LOCAL = auto()
     COMP_USED_AS_COMPARISON = auto()
     EQUIVALENCE_CROSS_ADDRESSING = auto()
     INDEX_WITHOUT_BOUNDS_CHECK = auto()
@@ -74,7 +73,6 @@ SEVERITY_MAP = {
     WarningKind.SCAN_WITHOUT_CARRY_CHECK: Severity.HIGH,
     WarningKind.READONLY_ARRAY_MODIFICATION: Severity.HIGH,
     WarningKind.UPPER_32K_WITHOUT_PTR: Severity.HIGH,
-    WarningKind.GLOBAL_PTR_FROM_LOCAL: Severity.MEDIUM,
     WarningKind.COMP_USED_AS_COMPARISON: Severity.MEDIUM,
     WarningKind.EQUIVALENCE_CROSS_ADDRESSING: Severity.MEDIUM,
     WarningKind.INDEX_WITHOUT_BOUNDS_CHECK: Severity.MEDIUM,
@@ -104,7 +102,6 @@ RULE_NUMBERS = {
     WarningKind.SCAN_WITHOUT_CARRY_CHECK: 11,
     WarningKind.READONLY_ARRAY_MODIFICATION: 12,
     WarningKind.UPPER_32K_WITHOUT_PTR: 13,
-    WarningKind.GLOBAL_PTR_FROM_LOCAL: 14,
     WarningKind.COMP_USED_AS_COMPARISON: 15,
     WarningKind.EQUIVALENCE_CROSS_ADDRESSING: 16,
     WarningKind.INDEX_WITHOUT_BOUNDS_CHECK: 17,
@@ -128,13 +125,12 @@ RULE_DESCRIPTIONS = {
     WarningKind.EQUIVALENCE_TO_IMPLICIT_PTR: "EQUIVALENCE to implicit pointer overlays the pointer itself",
     WarningKind.STRING_VALUE_PARAM_MISMATCH: "STRING passed by value — byte goes to wrong side",
     WarningKind.UNINIT_POINTER_DEREF: "Pointer dereferenced without prior assignment",
-    WarningKind.EXTENDED_POINTER_NEEDED: "Access to upper 32K without EXT pointer",
+    WarningKind.EXTENDED_POINTER_NEEDED: "Address of >32K array stored in non-.EXT pointer (assignment-time)",
     WarningKind.FIXED_DIV_PRECISION_LOSS: "FIXED division loses all decimals — use $SCALE",
     WarningKind.RECURSION_WITHOUT_LARGESTACK: "Recursive procedure without ?LARGESTACK",
     WarningKind.SCAN_WITHOUT_CARRY_CHECK: "SCAN/RSCAN without subsequent $CARRY test",
     WarningKind.READONLY_ARRAY_MODIFICATION: "Attempt to modify read-only (= 'P') array",
-    WarningKind.UPPER_32K_WITHOUT_PTR: "Array bounds cross 32K boundary without indirect pointer",
-    WarningKind.GLOBAL_PTR_FROM_LOCAL: "Global pointer initialized with address of local",
+    WarningKind.UPPER_32K_WITHOUT_PTR: "Direct array exceeds 32K words — needs indirect allocation (declaration-time)",
     WarningKind.COMP_USED_AS_COMPARISON: "$COMP used in IF — it inverts bits, does not compare",
     WarningKind.EQUIVALENCE_CROSS_ADDRESSING: "EQUIVALENCE across different addressing modes",
     WarningKind.INDEX_WITHOUT_BOUNDS_CHECK: "Array indexed without explicit bounds check",
