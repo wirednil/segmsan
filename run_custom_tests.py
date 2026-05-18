@@ -170,7 +170,7 @@ class TestSuite:
         """Get warnings as list from analyzer"""
         try:
             result = subprocess.run(
-                ["python3", "-m", "segmsan", "-f", "json", filename],
+                ["python3", "-m", "tal_analyzer", "-f", "json", filename],
                 cwd=self.base_dir,
                 capture_output=True,
                 text=True,

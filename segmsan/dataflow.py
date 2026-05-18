@@ -262,8 +262,39 @@ class MemoryAnalyzer:
                 self._analyze_stmts(body, body_state, source_file, proc_name, scope)
                 state.merge(body_state)
 
+            case ReturnStmt(value=value, loc=loc):
+                if value is not None:
+                    self._check_return(value, state, source_file, loc, proc_name, scope)
+
             case _:
                 pass
+
+    def _check_return(self, value: Expr, state: DataflowState,
+                      source_file: str, loc, proc_name: str, scope: ScopeStack):
+        if isinstance(value, AddressOfExpr):
+            inner_name = extract_var_name(value.inner)
+            if inner_name and scope.is_local(inner_name):
+                self.warnings.append(Warning(
+                    kind=WarningKind.RETURN_LOCAL_ADDR,
+                    message=f"Procedure '{proc_name}' returns @{inner_name} (local) "
+                            f"— pointer dangles after frame is destroyed",
+                    loc=f"{source_file}{loc}",
+                    suggestion=f"Allocate '{inner_name}' globally or return by value",
+                ))
+        ret_name = extract_var_name(value)
+        if ret_name:
+            upper = ret_name.upper()
+            if upper in state.vars and state.vars[upper].tainted:
+                sources = state.vars[upper].taint_sources
+                sources_str = ", ".join(sorted(s for s in sources if s))
+                self.warnings.append(Warning(
+                    kind=WarningKind.RETURN_LOCAL_ADDR,
+                    message=f"Procedure '{proc_name}' returns tainted pointer from "
+                            f"local(s) [{sources_str}] — pointer dangles after return",
+                    loc=f"{source_file}{loc}",
+                    suggestion="Break the taint chain before returning the pointer",
+                ))
+        self._check_derefs_in_expr(value, state, source_file, loc, proc_name, scope)
 
     def _analyze_assignment(self, target: Expr, source: Expr, state: DataflowState,
                             source_file: str, loc, proc_name: str, scope: ScopeStack):

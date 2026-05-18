@@ -49,6 +49,7 @@ class ProcSummary:
     locals_indirect_words: int = 0
     frame_size_words: int = 0
     is_recursive: bool = False
+    returns_local_ref: bool = False
 
 
 @dataclass
@@ -135,6 +136,12 @@ class CallGraph:
 
             case ForStmt(body=body):
                 self._analyze_body(body, summary, params, local_names, param_name_set)
+
+            case ReturnStmt(value=value):
+                if isinstance(value, AddressOfExpr):
+                    inner_name = self._extract_name(value.inner)
+                    if inner_name and inner_name.upper() in local_names:
+                        summary.returns_local_ref = True
 
     def _analyze_assign(self, target: Expr, source: Expr,
                         summary: ProcSummary, params: list[ParamDecl],
@@ -388,6 +395,37 @@ class InterprocAnalyzer:
                 body_state = deepcopy(state)
                 self._analyze_stmts(body, body_state, scope, source_file, proc_name, depth)
                 self._merge_states(state, body_state)
+
+            case ReturnStmt(value=value, loc=loc):
+                self._analyze_return(value, state, scope, source_file, loc, proc_name, depth)
+
+    def _analyze_return(self, value: Optional[Expr], state: dict[str, VarState],
+                        scope: ScopeStack, source_file: str, loc, proc_name: str, depth: int):
+        if value is None:
+            return
+        if isinstance(value, AddressOfExpr):
+            inner_name = self._extract_name(value.inner)
+            if inner_name and scope.is_local(inner_name):
+                self.warnings.append(Warning(
+                    kind=WarningKind.RETURN_LOCAL_ADDR,
+                    message=f"Procedure '{proc_name}' returns @{inner_name} (local) "
+                            f"— pointer dangles after frame is destroyed (depth={depth})",
+                    loc=f"{source_file}{loc}",
+                    suggestion=f"Allocate '{inner_name}' globally or return by value, not by reference",
+                ))
+        ret_name = self._extract_name(value)
+        if ret_name:
+            upper_r = ret_name.upper()
+            if upper_r in state and state[upper_r].tainted:
+                sources = state[upper_r].taint_sources
+                sources_str = ", ".join(sorted(s for s in sources if s))
+                self.warnings.append(Warning(
+                    kind=WarningKind.RETURN_LOCAL_ADDR,
+                    message=f"Procedure '{proc_name}' returns tainted pointer [{sources_str}] "
+                            f"— pointer dangles after frame is destroyed (depth={depth})",
+                    loc=f"{source_file}{loc}",
+                    suggestion="Break the taint chain before returning the pointer",
+                ))
 
     def _analyze_assign(self, target: Expr, source: Expr, state: dict[str, VarState],
                         scope: ScopeStack, source_file: str, loc, proc_name: str, depth: int):

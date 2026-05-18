@@ -162,8 +162,8 @@ INT PROC create^buffer^hdr(capacity)
 BEGIN
     INT .hdr := 0;
     ! In real code: allocate from secondary storage
-    ! For test: just return 0
-    RETURN @hdr;
+    ! For test: just return 0 (the pointer value, not address-of)
+    RETURN hdr;
 END;
 
 ! ========================================================================

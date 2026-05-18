@@ -57,6 +57,7 @@ class WarningKind(Enum):
     SECONDARY_OVERFLOW = auto()
     SUBLOCAL_INDIRECT = auto()
     UNRESOLVED_TEMPLATE = auto()
+    RETURN_LOCAL_ADDR = auto()
 
 
 SEVERITY_MAP = {
@@ -86,6 +87,7 @@ SEVERITY_MAP = {
     WarningKind.SECONDARY_OVERFLOW: Severity.HIGH,
     WarningKind.SUBLOCAL_INDIRECT: Severity.MEDIUM,
     WarningKind.UNRESOLVED_TEMPLATE: Severity.MEDIUM,
+    WarningKind.RETURN_LOCAL_ADDR: Severity.CRITICAL,
 }
 
 RULE_NUMBERS = {
@@ -115,6 +117,7 @@ RULE_NUMBERS = {
     WarningKind.SECONDARY_OVERFLOW: 25,
     WarningKind.SUBLOCAL_INDIRECT: 26,
     WarningKind.UNRESOLVED_TEMPLATE: 27,
+    WarningKind.RETURN_LOCAL_ADDR: 28,
 }
 
 RULE_DESCRIPTIONS = {
@@ -144,6 +147,7 @@ RULE_DESCRIPTIONS = {
     WarningKind.SECONDARY_OVERFLOW: "Primary + secondary storage exceeds 32,768 words (64 KB)",
     WarningKind.SUBLOCAL_INDIRECT: "Indirect declaration in sublocal — compiler converts to direct (no secondary area)",
     WarningKind.UNRESOLVED_TEMPLATE: "Struct references template from unresolved import — size unknown, totals are lower bounds",
+    WarningKind.RETURN_LOCAL_ADDR: "Procedure returns address of local variable — pointer dangles after return",
 }
 
 GROUPABLE_KINDS = {
@@ -439,6 +443,9 @@ def _format_help(kind: WarningKind, w: Warning, var_name: str,
     if kind == WarningKind.UNRESOLVED_TEMPLATE:
         return (f"Provide the missing ?SOURCE file so the template can be resolved\n"
                 f"      or add the struct definition locally with STRUCT name (*); BEGIN ... END;")
+    if kind == WarningKind.RETURN_LOCAL_ADDR:
+        return (f"The caller receives a dangling pointer — the frame is destroyed on return\n"
+                f"      Return the value by copy (INT return) or allocate the buffer globally")
     if w.suggestion:
         return w.suggestion
     return ""
