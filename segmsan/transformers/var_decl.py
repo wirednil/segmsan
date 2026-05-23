@@ -206,11 +206,15 @@ class VarDeclTransformer(Transformer):
         for item in items:
             if isinstance(item, int):
                 return item
-            if isinstance(item, Token) and item.type == "NUMBER_INT":
-                try:
-                    return _parse_int(str(item))
-                except (ValueError, AttributeError):
-                    return 0
+            if isinstance(item, Token):
+                if item.type == "NUMBER_INT":
+                    try:
+                        return _parse_int(str(item))
+                    except (ValueError, AttributeError):
+                        return 0
+                if item.type in ("STRING_LIT", "CHAR_LIT"):
+                    s = str(item)
+                    return ord(s[0]) if s else 0
         return 0  # NAME or unresolvable
 
     def pub_name_init(self, items) -> _VarInit:

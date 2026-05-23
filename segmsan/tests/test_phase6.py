@@ -468,6 +468,74 @@ def test_code_multi_word():
     assert "20" in s.instructions[0]
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Grupo 28: STACK / CODE con mnemonics (bautils ARMTRAP patterns)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test28_stack_simple():
+    r = _parse("stack 7")
+    assert isinstance(r[0], StackStmt)
+    assert len(r[0].values) == 1
+
+def test28_stack_multiple():
+    r = _parse("stack 7, count, @ptr")
+    s = r[0]
+    assert isinstance(s, StackStmt)
+    assert len(s.values) == 3
+
+def test28_code_bare_mnemonic():
+    r = _parse("code( sete )")
+    s = r[0]
+    assert isinstance(s, CodeStmt)
+    assert len(s.instructions) == 1
+    assert s.instructions[0] == "sete"
+
+def test28_code_mnemonic_identifier():
+    r = _parse("code( pcal timer_insert )")
+    s = r[0]
+    assert isinstance(s, CodeStmt)
+    assert len(s.instructions) == 1
+    assert "pcal" in s.instructions[0]
+    assert "timer_insert" in s.instructions[0]
+
+def test28_code_multi_instruction():
+    r = _parse("code( adds num_params; pcal setmode )")
+    s = r[0]
+    assert isinstance(s, CodeStmt)
+    assert len(s.instructions) == 2
+    assert "adds" in s.instructions[0]
+    assert "pcal" in s.instructions[1]
+
+def test28_code_octal_constant():
+    r = _parse("code( push 777 )")
+    s = r[0]
+    assert isinstance(s, CodeStmt)
+    assert len(s.instructions) == 1
+    assert "push" in s.instructions[0]
+    assert "777" in s.instructions[0]
+
+def test28_armtrap_pattern():
+    # ARMTRAP: stack N; code( mnemonic ) — no SEMI between them
+    r = _parse("stack 7\ncode( sete )")
+    assert len(r) == 2
+    assert isinstance(r[0], StackStmt)
+    assert isinstance(r[1], CodeStmt)
+    assert r[1].instructions[0] == "sete"
+
+def test28_code_adds_register():
+    r = _parse("code( adds local )")
+    s = r[0]
+    assert isinstance(s, CodeStmt)
+    assert len(s.instructions) == 1
+    assert "adds" in s.instructions[0]
+    assert "local" in s.instructions[0]
+
+def test28_stack_complex_expr():
+    r = _parse("stack @rec '+' 1")
+    s = r[0]
+    assert isinstance(s, StackStmt)
+    assert len(s.values) == 1
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Grupo 11: ASSERT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -688,6 +756,16 @@ _ALL_TESTS = [
     ("test_code_single",             test_code_single),
     ("test_code_multiple",           test_code_multiple),
     ("test_code_multi_word",         test_code_multi_word),
+    # Grupo 28: STACK/CODE mnemonics (ARMTRAP patterns)
+    ("test28_stack_simple",          test28_stack_simple),
+    ("test28_stack_multiple",        test28_stack_multiple),
+    ("test28_code_bare_mnemonic",    test28_code_bare_mnemonic),
+    ("test28_code_mnemonic_id",      test28_code_mnemonic_identifier),
+    ("test28_code_multi_instr",      test28_code_multi_instruction),
+    ("test28_code_octal_const",      test28_code_octal_constant),
+    ("test28_armtrap_pattern",       test28_armtrap_pattern),
+    ("test28_code_adds_reg",         test28_code_adds_register),
+    ("test28_stack_complex_expr",    test28_stack_complex_expr),
     # Grupo 11: ASSERT
     ("test_assert_simple",           test_assert_simple),
     ("test_assert_expression_level", test_assert_expression_level),

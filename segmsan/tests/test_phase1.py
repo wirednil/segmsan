@@ -300,6 +300,48 @@ def test_var_no_init_still_works():
     assert d[0].public_name == ""
 
 # ---------------------------------------------------------------------------
+# Grupo 29: STRING_LIT / CHAR_LIT array bounds (bautils undocumented extension)
+# ---------------------------------------------------------------------------
+
+def test29_string_bounds():
+    # bautils pattern: ids["0":"1"] — ord("0")=48, ord("1")=49
+    d = _parse('STRING ids["0":"1"];')
+    assert d[0].array_bounds.lo == 48
+    assert d[0].array_bounds.hi == 49
+
+def test29_char_bounds():
+    # CHAR_LIT bounds: ids['A':'Z'] — ord('A')=65, ord('Z')=90
+    d = _parse("STRING ids['A':'Z'];")
+    assert d[0].array_bounds.lo == 65
+    assert d[0].array_bounds.hi == 90
+
+def test29_int_bounds_regression():
+    # Regression: standard INT bounds still work
+    d = _parse("STRING buf[0:255];")
+    assert d[0].array_bounds.lo == 0
+    assert d[0].array_bounds.hi == 255
+
+def test29_name_bounds_regression():
+    # Regression: NAME (LITERAL constant) bound returns 0 (unresolvable at parse time)
+    d = _parse("STRING buf[0:MAX];")
+    assert d[0].array_bounds.lo == 0
+    assert d[0].array_bounds.hi == 0
+
+def test29_mixed_string_int_bounds():
+    # Mixed: lo=NUMBER_INT, hi=STRING_LIT
+    d = _parse('STRING ids[0:"Z"];')
+    assert d[0].array_bounds.lo == 0
+    assert d[0].array_bounds.hi == ord("Z")
+
+def test29_multivar_with_string_bounds():
+    # STRING-bounded array among multiple declarations
+    d = _parse('STRING byte[0:15], ids["0":"1"];')
+    assert d[0].array_bounds.lo == 0
+    assert d[0].array_bounds.hi == 15
+    assert d[1].array_bounds.lo == 48
+    assert d[1].array_bounds.hi == 49
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 

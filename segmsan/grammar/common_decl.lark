@@ -6,7 +6,7 @@
 %declare SEMI COMMA COLON MINUS STAR DOT KW_EXT
 %declare LPAREN RPAREN LBRACK RBRACK
 %declare PLUS SLASH EQ
-%declare NAME NUMBER_INT STRING_LIT
+%declare NAME NUMBER_INT STRING_LIT CHAR_LIT
 %declare TK_INT TK_INT32 TK_REAL TK_REAL64 TK_FIXED TK_UNSIGNED TK_STRING
 %declare KW_MAIN KW_VARIABLE KW_CALLABLE KW_INTERRUPT
 %declare KW_PRIV KW_RESIDENT KW_EXTENSIBLE KW_LANGUAGE
@@ -55,7 +55,11 @@ be_term  : be_unary ((STAR | SLASH) be_unary)*
 be_unary : MINUS be_unary
          | be_atom
 
+// STRING_LIT / CHAR_LIT as bounds: undocumented TAL extension (bautils pattern).
+// The TAL compiler treats the first character's ordinal as the bound value.
 be_atom  : NUMBER_INT
+         | STRING_LIT
+         | CHAR_LIT
          | NAME
          | LPAREN be_expr RPAREN
 

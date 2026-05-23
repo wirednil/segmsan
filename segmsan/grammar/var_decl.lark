@@ -5,7 +5,6 @@
 // Terminals unique to var_decl (all others are declared in common_decl.lark)
 %declare ASSIGN PRIME
 %declare NUMBER_INT32 NUMBER_FIXED NUMBER_REAL NUMBER_REAL64
-%declare CHAR_LIT
 %declare DOLLAR_FUNC
 
 var_decl : data_type var_item (COMMA var_item)* SEMI
