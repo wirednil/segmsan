@@ -120,12 +120,13 @@ class CallGraph:
                       params: list[ParamDecl], local_names: set[str],
                       param_name_set: set[str]):
         match stmt:
-            case AssignStmt(target=target, source=source):
-                self._analyze_assign(target, source, summary, params, local_names, param_name_set)
+            case AssignStmt(targets=targets, source=source):
+                target = targets[0] if targets else None
+                if target is not None:
+                    self._analyze_assign(target, source, summary, params, local_names, param_name_set)
 
-            case CallStmt(expr=expr):
-                callee = expr.name.upper()
-                summary.calls.append(callee)
+            case CallStmt(name=callee_name):
+                summary.calls.append(callee_name.upper())
 
             case IfStmt(then_body=then_body, else_body=else_body):
                 self._analyze_body(then_body, summary, params, local_names, param_name_set)
@@ -373,11 +374,13 @@ class InterprocAnalyzer:
     def _analyze_stmt(self, stmt: Statement, state: dict[str, VarState],
                       scope: ScopeStack, source_file: str, proc_name: str, depth: int):
         match stmt:
-            case AssignStmt(target=target, source=source, loc=loc):
-                self._analyze_assign(target, source, state, scope, source_file, loc, proc_name, depth)
+            case AssignStmt(targets=targets, source=source, loc=loc):
+                target = targets[0] if targets else None
+                if target is not None:
+                    self._analyze_assign(target, source, state, scope, source_file, loc, proc_name, depth)
 
-            case CallStmt(expr=expr, loc=loc):
-                self._analyze_call(expr, state, scope, source_file, loc, proc_name, depth)
+            case CallStmt(name=call_name, args=call_args, loc=loc):
+                self._analyze_call_by_name(call_name, call_args, state, scope, source_file, loc, proc_name, depth)
 
             case IfStmt(then_body=then_body, else_body=else_body):
                 then_state = deepcopy(state)
@@ -494,12 +497,12 @@ class InterprocAnalyzer:
             if upper_t in state:
                 state[upper_t].assigned = True
 
-    def _analyze_call(self, call: CallExpr, state: dict[str, VarState],
-                      scope: ScopeStack, source_file: str, loc, proc_name: str, depth: int):
-        callee_upper = call.name.upper()
+    def _analyze_call_by_name(self, name: str, args: list, state: dict[str, VarState],
+                              scope: ScopeStack, source_file: str, loc, proc_name: str, depth: int):
+        callee_upper = name.upper()
         callee_summary = self.cg.summaries.get(callee_upper)
 
-        for i, arg in enumerate(call.args):
+        for i, arg in enumerate(args):
             if isinstance(arg, AddressOfExpr):
                 inner_name = self._extract_name(arg.inner)
                 if inner_name and scope.is_local(inner_name):
@@ -507,10 +510,10 @@ class InterprocAnalyzer:
                         if i in callee_summary.ref_params_stored or callee_summary.stores_refs_globally:
                             self.warnings.append(Warning(
                                 kind=WarningKind.DANGLING_POINTER_STORE,
-                                message=f"@{inner_name} passed to {call.name}() as param {i+1} — "
+                                message=f"@{inner_name} passed to {name}() as param {i+1} — "
                                         f"callee stores refs globally (depth={depth})",
                                 loc=f"{source_file}{loc}",
-                                suggestion=f"Do not pass local addresses to {call.name}",
+                                suggestion=f"Do not pass local addresses to {name}",
                             ))
 
             arg_name = self._extract_name(arg)
@@ -523,7 +526,7 @@ class InterprocAnalyzer:
                             sources_str = ", ".join(sorted(s for s in sources if s))
                             self.warnings.append(Warning(
                                 kind=WarningKind.DANGLING_POINTER_STORE,
-                                message=f"Tainted ptr [{sources_str}] passed to {call.name}() — "
+                                message=f"Tainted ptr [{sources_str}] passed to {name}() — "
                                         f"callee stores refs globally (depth={depth})",
                                 loc=f"{source_file}{loc}",
                                 suggestion="Break taint chain before passing to this callee",

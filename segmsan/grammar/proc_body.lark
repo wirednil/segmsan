@@ -1,0 +1,134 @@
+// Phase 8 — Procedure Bodies (TAL Section 13)
+// Combined with (in order, all %declare stripped by parser constructor):
+//   expr.lark, common_decl.lark, var_decl.lark, struct_def.lark,
+//   literal_decl.lark, stmt_simple.lark (Phase-7 placeholders stripped),
+//   stmt_complex.lark, this file.
+// Start rule: proc_unit
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+proc_unit : proc_hdr proc_body -> proc_full
+
+proc_hdr : return_type? KW_PROC NAME public_name? param_list? proc_attrs SEMI  -> proc_hdr_
+         | return_type? KW_PROC NAME public_name? param_list? proc_attrs        -> proc_hdr_nosemi
+
+// ─── Procedure body ───────────────────────────────────────────────────────────
+// KW_BEGIN (section separator) is optional — parser.py and real TAL files omit it.
+// Locals are valid both before and after BEGIN (spec says after; parser.py allows both).
+// FIRST(proc_item) and FIRST(stmt_list) are disjoint, so LALR(1) dispatch is clean.
+// S/R on KW_BEGIN: shift wins → KW_BEGIN treated as section separator at this level;
+// compound statements (BEGIN...END) inside stmt_list are handled at a deeper nesting.
+proc_body : proc_item* KW_BEGIN proc_item* stmt_list KW_END SEMI  -> proc_body_begin
+          | proc_item* stmt_list KW_END SEMI                       -> proc_body_no_begin
+          | proc_item* KW_FORWARD SEMI                             -> proc_body_forward
+          | proc_item* KW_EXTERNAL SEMI                            -> proc_body_external
+
+proc_item : pre_begin_decl
+          | subproc_decl
+
+// ─── Declarations before and after BEGIN ─────────────────────────────────────
+// FIRST sets are disjoint so LALR(1) dispatch is unambiguous:
+//   TK_* (data_type) + NAME/DOT → var_decl
+//   TK_* + KW_PROC              → proc_param_decl
+//   KW_PROC                     → proc_param_decl (without return type)
+//   KW_STRUCT / KW_STRUCTURE    → struct_decl
+//   KW_LITERAL                  → literal_decl
+//   KW_DEFINE                   → define_decl
+//   KW_ENTRY                    → entry_decl
+//   KW_LABEL                    → label_decl
+//   KW_SUBPROC / TK_* KW_SUBPROC → subproc_decl (via proc_item only)
+pre_begin_decl : var_decl
+               | struct_decl
+               | literal_decl
+               | define_decl
+               | entry_decl
+               | label_decl
+               | proc_param_decl
+               | DIRECTIVE              -> proc_directive
+
+// PROC-type parameter declarations (typed procedure parameters).
+// All four forms: [return_type] PROC [(32)] [indirection] NAME ;
+proc_param_decl : return_type KW_PROC LPAREN NUMBER_INT RPAREN indirection? NAME SEMI  -> proc_param_typed32
+                | return_type KW_PROC indirection? NAME SEMI                            -> proc_param_typed
+                | KW_PROC LPAREN NUMBER_INT RPAREN indirection? NAME SEMI               -> proc_param32
+                | KW_PROC indirection? NAME SEMI                                        -> proc_param
+
+define_decl : KW_DEFINE NAME define_params? EQ lv_expr SEMI  -> define_
+
+define_params : LPAREN NAME (COMMA NAME)* RPAREN
+
+entry_decl : KW_ENTRY NAME (COMMA NAME)* SEMI  -> entry_point
+label_decl : KW_LABEL NAME (COMMA NAME)* SEMI  -> label_decl_
+
+// ─── Subprocedure declarations ────────────────────────────────────────────────
+// Same BEGIN-optional pattern as proc_body; spec says no nested subprocs.
+subproc_decl : sub_hdr sub_body  -> subproc_full
+             | sub_hdr KW_FORWARD SEMI  -> subproc_forward
+
+sub_body : pre_begin_decl* KW_BEGIN pre_begin_decl* stmt_list KW_END SEMI  -> sub_body_begin
+         | pre_begin_decl* stmt_list KW_END SEMI                             -> sub_body_no_begin
+
+sub_hdr : return_type? KW_SUBPROC NAME param_list? KW_VARIABLE? SEMI  -> sub_hdr_
+
+// ─── Runtime initializers for proc-scope var declarations ─────────────────────
+// Global var_decl (Phase 1) allows only compile-time literals in init_val.
+// Proc-local vars (Phase 8) may be initialized with any runtime expression:
+//   int x   := RTL_strlen_(buf);      -- typed INT PROC call (value return)
+//   int x   := some_constant;         -- LITERAL / named constant reference
+//   string .s := @ptr '<<' 1;         -- address-of + unsigned shift
+// Grammar is permissive here; semantic phase validates that a function
+// used in value position has a typed return (return_type != None),
+// as opposed to a CC-only proc whose result is read via condition codes.
+// constant_list ([1,2,3]) is kept as a separate alternative because it
+// starts with LBRACK which is not a valid expr primary (only postfix_tail),
+// making the two alternatives unambiguous for LALR(1).
+// top_repetition (N*[...]) is intentionally omitted from proc scope —
+// it is only meaningful for global array initializers.
+// Level boundary: use add_expr, NOT or_expr or expr.
+//
+// or_expr includes cmp_expr which uses EQ as a comparison operator.
+// EQ also appears in "initializer: EQ init_val" and "redef_target: EQ NAME".
+// Putting EQ inside FOLLOW(init_val) via or_expr causes a silent LALR(1)
+// conflict that removes ASSIGN from the expected set when a struct_decl
+// precedes the var_decl — breaking "string .a, .b, sep:=[\" \"];" with ASSIGN.
+//
+// add_expr stops before cmp_expr (no EQ) and before assign_expr (no ASSIGN),
+// so those tokens remain unambiguous as initializer/redef separators.
+// add_expr still covers all practical proc-scope initializers:
+//   calls:          NAME call_args               via primary + call_postfix
+//   address+shift:  @ptr '<<' 1                  via unary_expr + shift_expr
+//   arithmetic:     x + y * z                    via mul_expr + add_expr
+//   negation:       -RTL_strlen_(s)              via unary_minus
+//   literals:       5, -1, "str"                 via primary
+//   if_expr/case:   IF cond THEN a ELSE b        via primary (reachable)
+%override init_val : constant_list
+                   | add_expr
+
+// ─── Substring postfix: name[offset] FOR count ────────────────────────────────
+// Extends index_access to accept an optional byte-count suffix (RefMan §4.6).
+// for_slice? is optional inside index_access — KW_FOR ∉ FIRST(postfix_tail),
+// so postfix_tail* never starts on KW_FOR alone.  After RBRACK + KW_FOR,
+// Lark's shift preference consumes FOR count as a substring rather than
+// leaving KW_FOR for cmp_group_for (which only fires on plain-name add_expr,
+// not indexed ones — a deliberate trade-off; indexed group-cmp is not in use).
+// move_unit? resolves the LALR conflict: after KW_FOR expr, seeing KW_BYTES/WORDS/ELEMENTS
+// shifts into move_unit (preferred over reduce) so "byte[0] for 6 bytes" is consumed
+// entirely inside index_access rather than leaving KW_BYTES stranded outside the expr.
+// mul_expr stops before AMP so "arr[i] FOR n & next_seg" correctly ends at n.
+for_slice : KW_FOR mul_expr move_unit?  -> for_slice_
+
+%override postfix_tail : DOT NAME                                     -> field_access
+                       | LBRACK expr RBRACK for_slice?               -> index_access
+                       | DOT LT NUMBER_INT (COLON NUMBER_INT)? GT     -> bit_extract
+                       | call_args                                    -> call_postfix
+
+// ─── Group Comparison Expression (RefMan §4.15) ───────────────────────────────
+// Extended here rather than in expr.lark so Phase 6/7 parsers (which only load
+// expr.lark + stmt*.lark, without var_decl.lark) remain unaffected.
+// const_seq, move_unit, arrow_expr are available here because var_decl.lark and
+// stmt_simple.lark are loaded before proc_body.lark in the Phase 8 combined grammar.
+//
+// LALR(1): after add_expr cmp_op add_expr, lookahead KW_FOR → cmp_group_for;
+//          after add_expr cmp_op, lookahead LBRACK → cmp_group_list.
+//          KW_FOR ∉ FOLLOW(cmp_expr) and LBRACK ∉ FIRST(add_expr). No conflicts.
+%extend cmp_expr : add_expr cmp_op add_expr KW_FOR expr move_unit? arrow_expr?  -> cmp_group_for
+                 | add_expr cmp_op LBRACK const_seq RBRACK arrow_expr?           -> cmp_group_list

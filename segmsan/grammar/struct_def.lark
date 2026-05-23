@@ -1,0 +1,63 @@
+// Phase 2 — Struct Declarations
+// Shared rules (data_type, indirection, struct_ptr_ref, array_bounds, bound_expr family)
+// live in common_decl.lark, which the parser constructor prepends.
+
+// Terminals unique to struct_def (all others are declared in common_decl.lark)
+%declare KW_STRUCT KW_STRUCTURE KW_BEGIN KW_END
+%declare KW_FILLER KW_BIT_FILLER
+
+// Top-level struct declaration.
+// LALR(1) ambiguity fix: split by referral-paren vs definition-head.
+//   referral paren (NAME): struct .v(tmpl_def); → NEVER has body → unambiguous reduce.
+//   definition head (no paren or template *): MAY have body → shift on SEMI KW_BEGIN.
+// Without this split, struct .args(def); BEGIN (proc body) confuses the parser
+// into consuming BEGIN as struct body start.
+//
+// struct_var_list handles 1..N comma-separated referral instantiations:
+//   struct .fact(fact^def), .ptlf(ptlf^def);
+// LALR(1): after struct_head_ref, COMMA → shift (multi-var), SEMI → reduce (single).
+struct_decl : struct_kw struct_head_def SEMI KW_BEGIN struct_body KW_END SEMI  -> struct_with_body
+            | struct_kw struct_head_def SEMI                                    -> struct_no_body
+            | struct_kw struct_head_ref (COMMA struct_var_item)* SEMI          -> struct_var_list
+
+// Additional items in a multi-var struct declaration (no body allowed).
+struct_var_item : struct_head_ref
+               | struct_head_def
+
+struct_kw : KW_STRUCT | KW_STRUCTURE
+
+// Definition head: no paren, or template marker (*). Both MAY have a body.
+struct_head_def : indirection? NAME template_paren? array_bounds? redef_target?
+
+// Referral head: referral paren (NAME) is mandatory. NEVER has a body.
+// Because struct_paren is obligatory here, after reducing struct_head_ref the
+// SEMI lookahead has only one possible action: reduce struct_referral.
+struct_head_ref : indirection? NAME referral_paren array_bounds? redef_target?
+
+template_paren : LPAREN STAR RPAREN   -> template_marker
+referral_paren : LPAREN NAME RPAREN   -> referral_marker
+
+struct_body : struct_item*
+
+// Items inside a struct body. FIRST sets are disjoint, making this LALR(1):
+//   data_type items: TK_INT, TK_INT32, TK_REAL, TK_REAL64, TK_FIXED, TK_UNSIGNED, TK_STRING
+//   struct_decl:     KW_STRUCT, KW_STRUCTURE
+//   filler:          KW_FILLER
+//   bit_filler:      KW_BIT_FILLER
+//   terminator:      KW_END (not shifted — reduces struct_body)
+struct_item : data_type struct_field_list SEMI
+            | struct_decl
+            | KW_FILLER NUMBER_INT SEMI     -> filler_item
+            | KW_BIT_FILLER NUMBER_INT SEMI -> bit_filler_item
+
+struct_field_list : struct_field_item (COMMA struct_field_item)*
+
+// Two forms:
+//   indirection NAME struct_ptr_ref? redef_target?  — pointer field (simple or structure pointer)
+//   NAME array_bounds? redef_target?                — direct field (simple var or array)
+// Disambiguated by first token: DOT → indirection form, NAME → direct form.
+struct_field_item : indirection NAME struct_ptr_ref? redef_target?
+                  | NAME array_bounds? redef_target?
+
+// Redefinition: = previous_identifier. EQ is "=" (not ASSIGN which is ":=").
+redef_target : EQ NAME

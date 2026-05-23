@@ -21,7 +21,7 @@ def _local_only(program: Program) -> Program:
     local = Program(
         globals_=program.globals_,
         directives=program.directives,
-        procedures=[p for p in program.procedures if not p.is_extern and not p.is_forward],
+        procedures=[p for p in program.procedures if not p.is_external and not p.is_forward],
         source_file=program.source_file,
         literals=program.literals,
         source_imports=program.source_imports,

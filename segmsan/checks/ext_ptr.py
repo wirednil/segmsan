@@ -82,7 +82,7 @@ def _check_stmt_ext(stmt: Statement, scope: ScopeStack,
     if isinstance(stmt, AssignStmt):
         if isinstance(stmt.source, AddressOfExpr):
             inner_name = _extract_name(stmt.source.inner)
-            target_name = _extract_name(stmt.target)
+            target_name = _extract_name(stmt.targets[0]) if stmt.targets else None
             if inner_name and target_name:
                 inner_info = scope.lookup(inner_name)
                 target_info = scope.lookup(target_name)

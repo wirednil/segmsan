@@ -1,0 +1,58 @@
+// Phase 1 — Variable Declarations
+// Shared rules (data_type, indirection, struct_ptr_ref, array_bounds, bound_expr family)
+// live in common_decl.lark, which the parser constructor prepends.
+
+// Terminals unique to var_decl (all others are declared in common_decl.lark)
+%declare ASSIGN PRIME
+%declare NUMBER_INT32 NUMBER_FIXED NUMBER_REAL NUMBER_REAL64
+%declare CHAR_LIT
+%declare DOLLAR_FUNC
+
+var_decl : data_type var_item (COMMA var_item)* SEMI
+
+// struct_ptr_ref handles: INT .ptr (tmpl); and INT .EXT ptr (tmpl);
+var_item : indirection? NAME struct_ptr_ref? array_bounds? var_initializer?
+
+// Three forms of variable initializer:
+//   pub_name_init : = 'name' := init_val  — address-space spec + value (genlibs pattern)
+//   eq_init       : = init_val            — compile-time value with EQ separator
+//   assign_init   : := init_val           — compile-time value with ASSIGN separator
+// LALR(1): after EQ, lookahead PRIME → pub_name_init (PRIME not in FIRST(init_val));
+//          lookahead ASSIGN → assign_init; other → eq_init via init_val.
+var_initializer : EQ PRIME NAME PRIME ASSIGN init_val  -> pub_name_init
+                | EQ init_val                          -> eq_init
+                | ASSIGN init_val                      -> assign_init
+
+// NAME covers LITERAL-defined names used as global initializers (e.g. false, maxval).
+// Semantic validation (name must resolve to a compile-time constant) is deferred
+// to the analyzer; the grammar is permissive here.
+init_val : literal_val
+         | constant_list
+         | NUMBER_INT STAR LBRACK const_seq RBRACK -> top_repetition
+         | NUMBER_INT STAR literal_val               -> top_short_repetition
+         | NAME
+
+literal_val : NUMBER_INT
+            | NUMBER_INT32
+            | NUMBER_FIXED
+            | NUMBER_REAL
+            | NUMBER_REAL64
+            | STRING_LIT
+            | CHAR_LIT
+            | MINUS NUMBER_INT    -> neg_int
+            | MINUS NUMBER_INT32  -> neg_int32
+            | MINUS NUMBER_FIXED  -> neg_fixed
+
+constant_list : LBRACK const_seq RBRACK
+
+// mul_count: the repetition multiplier — NUMBER_INT or $FUNC(name).
+// LALR(1): NUMBER_INT → literal_val reduces on COMMA/RBRACK;
+//          NUMBER_INT → mul_count reduces on STAR.  Lookaheads disjoint, no conflict.
+mul_count : NUMBER_INT
+          | DOLLAR_FUNC LPAREN NAME RPAREN  -> dollar_func_call
+
+const_seq : const_item (COMMA const_item)*
+
+const_item : literal_val
+           | mul_count STAR LBRACK const_seq RBRACK -> repetition
+           | mul_count STAR literal_val               -> short_repetition

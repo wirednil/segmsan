@@ -1,9 +1,14 @@
-"""TAL lexer/tokenizer - produces tokens from TAL source code."""
+"""TAL lexer/tokenizer - produces tokens from TAL source code.
+
+Also contains Lark token stream adapters (migrated from lark_adapter.py).
+"""
 
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional
+
+from lark.lexer import Token as LarkToken
 
 
 class TokenType(Enum):
@@ -79,7 +84,6 @@ KEYWORDS = {
     "MOD",
     "DROP", "INTO",
     "STEP",
-    "FALSE", "TRUE",
     "BYTES",
     "FORWARD",
 }
@@ -165,9 +169,6 @@ class Lexer:
             while self.pos < len(self.source):
                 c = self.source[self.pos]
                 if c == "\n":
-                    break
-                if c == "!":
-                    self._advance()
                     break
                 self._advance()
             return True
@@ -418,27 +419,43 @@ class Lexer:
             self._emit(TokenType.IDENT, word, line, col)
             return
 
-        if upper == "INT" and self._ch() == "(":
-            paren_chars = ["("]
-            self._advance()
-            while self.pos < len(self.source) and self.source[self.pos] != ")":
-                paren_chars.append(self._advance())
-            if self._ch() == ")":
-                paren_chars.append(")")
+        if upper == "INT":
+            lookahead = self._ch()
+            if lookahead == " ":
+                j = self.pos + 1
+                while j < len(self.source) and self.source[j] == " ":
+                    j += 1
+                if j < len(self.source) and self.source[j] == "(":
+                    lookahead = "("
+            if lookahead == "(":
+                paren_chars = ["("]
                 self._advance()
-            self._emit(TokenType.TYPE_KEYWORD, word + "".join(paren_chars), line, col)
-            return
+                while self.pos < len(self.source) and self.source[self.pos] != ")":
+                    paren_chars.append(self._advance())
+                if self._ch() == ")":
+                    paren_chars.append(")")
+                    self._advance()
+                self._emit(TokenType.TYPE_KEYWORD, word + "".join(paren_chars), line, col)
+                return
 
-        if upper in ("FIXED", "UNSIGNED") and self._ch() == "(":
-            paren_chars = ["("]
-            self._advance()
-            while self.pos < len(self.source) and self.source[self.pos] != ")":
-                paren_chars.append(self._advance())
-            if self._ch() == ")":
-                paren_chars.append(")")
+        if upper in ("FIXED", "UNSIGNED", "REAL"):
+            la = self._ch()
+            if la == " ":
+                j = self.pos + 1
+                while j < len(self.source) and self.source[j] == " ":
+                    j += 1
+                if j < len(self.source) and self.source[j] == "(":
+                    la = "("
+            if la == "(":
+                paren_chars = ["("]
                 self._advance()
-            self._emit(TokenType.TYPE_KEYWORD, word + "".join(paren_chars), line, col)
-            return
+                while self.pos < len(self.source) and self.source[self.pos] != ")":
+                    paren_chars.append(self._advance())
+                if self._ch() == ")":
+                    paren_chars.append(")")
+                    self._advance()
+                self._emit(TokenType.TYPE_KEYWORD, word + "".join(paren_chars), line, col)
+                return
 
         if upper in TYPE_KEYWORDS:
             self._emit(TokenType.TYPE_KEYWORD, word, line, col)
@@ -636,3 +653,317 @@ class Lexer:
 
         self._emit(TokenType.EOF, "", self.line, self.col)
         return self.tokens
+
+
+# ---------------------------------------------------------------------------
+# Lark token stream adapters
+# ---------------------------------------------------------------------------
+
+_RESERVED: frozenset[str] = frozenset({
+    "AND", "ASSERT", "BEGIN", "BY",
+    "CALL", "CALLABLE", "CASE", "CODE",
+    "DEFINE", "DO", "DOWNTO", "DROP",
+    "ELSE", "END", "ENTRY", "EXTERNAL",
+    "FIXED", "FOR", "FORWARD",
+    "GOTO",
+    "IF", "INT", "INTERRUPT",
+    "LABEL", "LAND", "LITERAL", "LOR",
+    "MAIN",
+    "NOT",
+    "OF", "OR", "OTHERWISE",
+    "PRIV", "PROC",
+    "REAL", "RESIDENT", "RETURN", "RSCAN",
+    "SCAN", "STACK", "STORE", "STRING", "STRUCT", "SUBPROC",
+    "THEN", "TO",
+    "UNSIGNED", "UNTIL", "USE",
+    "VARIABLE",
+    "WHILE",
+    "XOR",
+})
+
+_NON_RESERVED: frozenset[str] = frozenset({
+    "AT", "BELOW", "BIT_FILLER", "BLOCK", "BYTES",
+    "C", "COBOL", "ELEMENTS", "EXT", "EXTENSIBLE",
+    "FILLER", "FORTRAN", "LANGUAGE", "NAME",
+    "PASCAL", "PRIVATE", "UNSPECIFIED", "WORDS",
+})
+
+_LEXER_EXTRAS: frozenset[str] = frozenset({
+    "ENDBLOCK", "STRUCTURE", "SHL", "SHR",
+    "MOD", "STEP", "INTO",
+})
+
+_PROMOTE_FROM_IDENT: frozenset[str] = frozenset({
+    "ASSERT", "BY", "CALLABLE", "CODE", "DOWNTO",
+    "ENTRY", "EXTERNAL", "INTERRUPT", "LABEL", "MAIN",
+    "OTHERWISE", "PRIV", "RESIDENT", "STACK", "UNTIL", "USE",
+    "FILLER", "BIT_FILLER",
+})
+
+_ALL_KEYWORDS: frozenset[str] = _RESERVED | _NON_RESERVED | _LEXER_EXTRAS
+
+
+def _normalize_type(value: str) -> str:
+    upper = value.upper().replace(" ", "")
+    base = upper.split("(")[0]
+    if base == "INT":
+        if "(64)" in upper:
+            return "TK_FIXED"
+        if "(32)" in upper:
+            return "TK_INT32"
+        return "TK_INT"
+    if base == "REAL":
+        if "(64)" in upper:
+            return "TK_REAL64"
+        return "TK_REAL"
+    if base == "FIXED":
+        return "TK_FIXED"
+    if base == "UNSIGNED":
+        return "TK_UNSIGNED"
+    if base == "STRING":
+        return "TK_STRING"
+    if base == "EXT":
+        return "KW_EXT"
+    return f"TK_{base}"
+
+
+_PUNCT: dict[TokenType, str] = {
+    TokenType.SEMI:       "SEMI",
+    TokenType.COMMA:      "COMMA",
+    TokenType.COLON:      "COLON",
+    TokenType.LPAREN:     "LPAREN",
+    TokenType.RPAREN:     "RPAREN",
+    TokenType.LBRACK:     "LBRACK",
+    TokenType.RBRACK:     "RBRACK",
+    TokenType.ARROW:      "ARROW",
+    TokenType.DOT:        "DOT",
+    TokenType.AT:         "AT",
+    TokenType.ASSIGN:     "ASSIGN",
+    TokenType.MOVE_LR:    "MOVE_LR",
+    TokenType.MOVE_RL:    "MOVE_RL",
+    TokenType.AMP:        "AMP",
+    TokenType.EQ:         "EQ",
+    TokenType.NEQ:        "NEQ",
+    TokenType.LT:         "LT",
+    TokenType.GT:         "GT",
+    TokenType.LE:         "LE",
+    TokenType.GE:         "GE",
+    TokenType.PLUS:       "PLUS",
+    TokenType.MINUS:      "MINUS",
+    TokenType.STAR:       "STAR",
+    TokenType.SLASH:      "SLASH",
+    TokenType.SHL:        "SHL",
+    TokenType.SHR:        "SHR",
+    TokenType.HASH:       "HASH",
+    TokenType.CARET:      "CARET",
+    TokenType.DOT_SG:     "DOT_SG",
+    TokenType.DOT_DOT:    "DOT_DOT",
+    TokenType.STRING_LIT: "STRING_LIT",
+    TokenType.CHAR_LIT:   "CHAR_LIT",
+    TokenType.DOLLAR_FUNC:"DOLLAR_FUNC",
+    TokenType.DIRECTIVE:  "DIRECTIVE",
+}
+
+_PRIME_OPS: dict[TokenType, str] = {
+    TokenType.UADD:  "UADD",
+    TokenType.USUB:  "USUB",
+    TokenType.UMUL:  "UMUL",
+    TokenType.UDIV:  "UDIV",
+    TokenType.UMOD:  "UMOD",
+    TokenType.USHL:  "USHL",
+    TokenType.USHR:  "USHR",
+    TokenType.ULT:   "ULT",
+    TokenType.UEQ:   "UEQ",
+    TokenType.UGT:   "UGT",
+    TokenType.ULE:   "ULE",
+    TokenType.UGE:   "UGE",
+    TokenType.UNE:   "UNE",
+}
+
+_BASE_ADDR_TYPES: frozenset[TokenType] = frozenset({
+    TokenType.BASE_P,
+    TokenType.BASE_G,
+    TokenType.BASE_L,
+    TokenType.BASE_S,
+    TokenType.BASE_SG,
+})
+
+
+def _classify_number(value: str) -> str:
+    v = value.upper()
+    if v.endswith("%D"):
+        return "NUMBER_INT32"
+    if v.endswith("D") and not v.startswith("%H"):
+        return "NUMBER_INT32"
+    if v.endswith("%F"):
+        return "NUMBER_FIXED"
+    if v.endswith("F") and not v.startswith("%H"):
+        return "NUMBER_FIXED"
+    if "." in v and "E" in v:
+        return "NUMBER_REAL"
+    if "." in v and "L" in v:
+        return "NUMBER_REAL64"
+    return "NUMBER_INT"
+
+
+def _skip_define(it) -> None:
+    for t in it:
+        if t.type == TokenType.HASH:
+            for t2 in it:
+                if t2.type in (TokenType.SEMI, TokenType.EOF):
+                    return
+            return
+        if t.type == TokenType.IDENT and t.value.endswith("#"):
+            for t2 in it:
+                if t2.type in (TokenType.SEMI, TokenType.EOF):
+                    return
+            return
+        if t.type == TokenType.EOF:
+            return
+
+
+def to_lark_stream(tokens: list[Token]):
+    it = iter(tokens)
+    for t in it:
+        if t.type == TokenType.EOF:
+            return
+        if t.type == TokenType.KEYWORD and t.value.upper() == "DEFINE":
+            _skip_define(it)
+            continue
+        if t.type == TokenType.KEYWORD:
+            upper = t.value.upper()
+            yield LarkToken(f"KW_{upper}", t.value, line=t.line, column=t.col)
+        elif t.type == TokenType.TYPE_KEYWORD:
+            terminal = _normalize_type(t.value)
+            yield LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type in _PRIME_OPS:
+            terminal = _PRIME_OPS[t.type]
+            yield LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type == TokenType.NUMBER:
+            terminal = _classify_number(t.value)
+            yield LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type in _BASE_ADDR_TYPES:
+            inner = t.value[1:-1]
+            yield LarkToken("PRIME", "'",   line=t.line, column=t.col)
+            yield LarkToken("NAME",  inner, line=t.line, column=t.col + 1)
+            yield LarkToken("PRIME", "'",   line=t.line, column=t.col + len(t.value) - 1)
+        elif t.type == TokenType.IDENT:
+            upper = t.value.upper()
+            if upper in _PROMOTE_FROM_IDENT:
+                yield LarkToken(f"KW_{upper}", t.value, line=t.line, column=t.col)
+            else:
+                yield LarkToken("NAME", t.value, line=t.line, column=t.col)
+        else:
+            terminal = _PUNCT.get(t.type)
+            if terminal is not None:
+                yield LarkToken(terminal, t.value, line=t.line, column=t.col)
+
+
+_PROC_HEADER_PROMOTE: dict[str, str] = {
+    "VARIABLE":     "KW_VARIABLE",
+    "EXTENSIBLE":   "KW_EXTENSIBLE",
+    "LANGUAGE":     "KW_LANGUAGE",
+    "EXTERN":       "KW_EXTERNAL",
+}
+
+_STMT_PROMOTE: dict[str, str] = {
+    "BYTES":    "KW_BYTES",
+    "WORDS":    "KW_WORDS",
+    "ELEMENTS": "KW_ELEMENTS",
+    "STEP":     "KW_STEP",
+}
+
+_PROC_BODY_PROMOTE: dict[str, str] = {
+    **_PROC_HEADER_PROMOTE,
+    **_STMT_PROMOTE,
+}
+
+
+def to_stmt_stream(tokens: list[Token]):
+    for lark_tok in to_lark_stream(tokens):
+        if lark_tok.type == "NAME":
+            promoted = _STMT_PROMOTE.get(str(lark_tok).upper())
+            if promoted is not None:
+                yield LarkToken(promoted, lark_tok,
+                                line=lark_tok.line, column=lark_tok.column)
+                continue
+        yield lark_tok
+
+
+def to_proc_body_stream(tokens: list[Token]):
+    it = iter(tokens)
+    prev_type: str | None = None
+    for t in it:
+        if t.type == TokenType.EOF:
+            return
+
+        if t.type == TokenType.KEYWORD and t.value.upper() == "DEFINE":
+            _skip_define(it)
+            continue
+
+        if t.type == TokenType.KEYWORD:
+            upper = t.value.upper()
+            tok = LarkToken(f"KW_{upper}", t.value, line=t.line, column=t.col)
+        elif t.type == TokenType.TYPE_KEYWORD:
+            terminal = _normalize_type(t.value)
+            tok = LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type in _PRIME_OPS:
+            terminal = _PRIME_OPS[t.type]
+            tok = LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type == TokenType.NUMBER:
+            terminal = _classify_number(t.value)
+            tok = LarkToken(terminal, t.value, line=t.line, column=t.col)
+        elif t.type in _BASE_ADDR_TYPES:
+            inner = t.value[1:-1]
+            yield LarkToken("PRIME", "'",   line=t.line, column=t.col)
+            yield LarkToken("NAME",  inner, line=t.line, column=t.col + 1)
+            yield LarkToken("PRIME", "'",   line=t.line, column=t.col + len(t.value) - 1)
+            prev_type = "PRIME"
+            continue
+        elif t.type == TokenType.IDENT:
+            upper = t.value.upper()
+            if prev_type in ("KW_PROC", "KW_SUBPROC"):
+                tok = LarkToken("NAME", t.value, line=t.line, column=t.col)
+            elif upper in _PROMOTE_FROM_IDENT:
+                tok = LarkToken(f"KW_{upper}", t.value, line=t.line, column=t.col)
+            elif upper in _PROC_BODY_PROMOTE:
+                tok = LarkToken(_PROC_BODY_PROMOTE[upper], t.value,
+                                line=t.line, column=t.col)
+            else:
+                tok = LarkToken("NAME", t.value, line=t.line, column=t.col)
+        else:
+            terminal = _PUNCT.get(t.type)
+            if terminal is None:
+                continue
+            tok = LarkToken(terminal, t.value, line=t.line, column=t.col)
+
+        prev_type = tok.type
+        yield tok
+
+
+def _strip_semi_before_else(tokens):
+    prev = None
+    for tok in tokens:
+        if prev is not None:
+            if prev.type == "SEMI" and tok.type == "KW_ELSE":
+                pass
+            else:
+                yield prev
+        prev = tok
+    if prev is not None:
+        yield prev
+
+
+def to_program_stream(tokens: list[Token]):
+    yield from _strip_semi_before_else(to_proc_body_stream(tokens))
+
+
+def to_proc_header_stream(tokens: list[Token]):
+    for lark_tok in to_lark_stream(tokens):
+        if lark_tok.type == "NAME":
+            promoted = _PROC_HEADER_PROMOTE.get(str(lark_tok).upper())
+            if promoted is not None:
+                yield LarkToken(promoted, lark_tok,
+                                line=lark_tok.line, column=lark_tok.column)
+                continue
+        yield lark_tok

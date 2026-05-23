@@ -120,11 +120,11 @@ def _is_cc_setter_stmt(stmt: Statement) -> bool:
 
 def _describe_stmt(stmt: Statement) -> str:
     if isinstance(stmt, AssignStmt):
-        t = _describe_expr(stmt.target)
+        t = _describe_expr(stmt.targets[0]) if stmt.targets else "?"
         s = _describe_expr(stmt.source)
         return f"{t} := {s}"
     if isinstance(stmt, CallStmt):
-        return f"{stmt.expr.name}()"
+        return f"{stmt.name}()"
     return "statement"
 
 

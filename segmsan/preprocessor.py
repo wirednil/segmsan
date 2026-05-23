@@ -205,6 +205,13 @@ def _expand_one_pass(source: str, macro_map: dict[str, DefineMacro]) -> tuple[st
         if not macro.params and m.group(0).endswith('('):
             continue
 
+        # Macro has params but regex matched without '(' — name reference, not a call.
+        # Without this guard, expand_macros finds the next '(' anywhere in the file
+        # and wrongly treats it as the argument list (e.g. 'log' in '?section log'
+        # stealing the '(' of the next proc declaration).
+        if macro.params and not m.group(0).endswith('('):
+            continue
+
         if macro.params:
             paren_match = re.search(r'\(', source[start:])
             if not paren_match:

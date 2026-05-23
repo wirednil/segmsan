@@ -78,7 +78,7 @@ def _references_carry(stmt: Statement) -> bool:
     if isinstance(stmt, IfStmt):
         return _expr_references_carry(stmt.condition)
     if isinstance(stmt, AssignStmt):
-        return _expr_references_carry(stmt.source) or _expr_references_carry(stmt.target)
+        return _expr_references_carry(stmt.source) or any(_expr_references_carry(t) for t in stmt.targets)
     return False
 
 

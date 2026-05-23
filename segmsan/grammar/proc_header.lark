@@ -1,0 +1,15 @@
+// Phase 5 — Procedure and Subprocedure Headers
+// All shared rules (return_type, param_list, param_entry, param_indir, param_bounds,
+// proc_attrs, proc_attr, lang_spec, public_name, ext_or_fwd, bound_expr family)
+// live in common_decl.lark, which the parser constructor prepends.
+//
+// PROC   : [type] PROC name [= "pub"] [(params)] [attr, attr...] ; [EXTERNAL; | FORWARD;]
+// SUBPROC: [type] SUBPROC name [(params)] [VARIABLE] ;
+//
+// param-spec (typed declarations after first SEMI) is Phase 8.
+
+// Terminals unique to proc_header (all others are declared in common_decl.lark)
+%declare KW_PROC KW_SUBPROC
+
+proc_header : return_type? KW_PROC    NAME public_name? param_list? proc_attrs SEMI ext_or_fwd? -> proc_def
+            | return_type? KW_SUBPROC NAME param_list? KW_VARIABLE? SEMI                        -> subproc_def

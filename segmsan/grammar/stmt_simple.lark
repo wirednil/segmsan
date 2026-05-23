@@ -1,0 +1,209 @@
+// Phase 6 — Simple Statements (TAL Section 12)
+// Combined with expr.lark: grammar = expr_lark_text + "\n" + this file
+// start='stmt_list'
+//
+// Terminals already declared in expr.lark are NOT redeclared here.
+// Only new terminals required for statement parsing are declared below.
+
+// ─── New terminals (not in expr.lark) ────────────────────────────────────────
+%declare MOVE_LR MOVE_RL ARROW
+%declare KW_CALL KW_RETURN KW_GOTO
+%declare KW_SCAN KW_RSCAN KW_WHILE KW_UNTIL
+%declare KW_STACK KW_STORE KW_USE KW_DROP
+%declare KW_CODE KW_ASSERT
+%declare KW_DO KW_FOR KW_TO KW_DOWNTO KW_BY KW_STEP
+%declare KW_BYTES KW_WORDS KW_ELEMENTS
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+// _stmt_item is underscore-prefixed → inlined into stmt_list items.
+// Trailing statement? handles the optional last statement without SEMI
+// (common before END in compound statements).
+stmt_list : _stmt_item* statement?
+
+_stmt_item : statement SEMI
+           | SEMI
+
+// ─── Statement dispatch ──────────────────────────────────────────────────────
+// ? prefix inlines single-child reductions (no stmt wrapper node in tree).
+// Dispatch is by FIRST token — all sets are disjoint.
+// Phase 7 placeholders consume only the opening keyword so Phase 6 tests
+// never trigger them (Phase 6 inputs never use IF/WHILE/FOR/DO/CASE).
+
+?statement : compound_stmt
+           | return_stmt
+           | goto_stmt
+           | call_stmt
+           | scan_stmt
+           | stack_stmt
+           | store_stmt
+           | use_stmt
+           | drop_stmt
+           | code_stmt
+           | assert_stmt
+           | move_or_assign
+           | label_stmt
+           | if_stmt
+           | while_stmt
+           | for_stmt
+           | do_stmt
+           | case_stmt
+
+// ─── Compound (BEGIN...END) ───────────────────────────────────────────────────
+compound_stmt : KW_BEGIN stmt_list KW_END  -> compound
+
+// ─── RETURN ──────────────────────────────────────────────────────────────────
+// Three forms (spec TAL Section 12.2.1):
+//   RETURN , cc          — condition code only
+//   RETURN value         — value only
+//   RETURN value , cc    — value + condition code
+// Disambiguation: COMMA immediately after RETURN → cc_only.
+// After RETURN expr: COMMA → value_cc, SEMI/END → value.
+
+return_stmt : KW_RETURN COMMA expr       -> return_cc_only
+            | KW_RETURN expr COMMA expr  -> return_value_cc
+            | KW_RETURN expr             -> return_value
+            | KW_RETURN                  -> return_bare
+
+// ─── GOTO ────────────────────────────────────────────────────────────────────
+goto_stmt : KW_GOTO NAME  -> goto_
+
+// ─── CALL ────────────────────────────────────────────────────────────────────
+// Explicit CALL keyword form. Bare calls handled by expr_stmt.
+call_stmt : KW_CALL NAME stmt_call_args?  -> call_explicit
+
+// Explicit LPAREN RPAREN handles the no-args case (same pattern as call_args in expr.lark).
+// This prevents a shift/reduce conflict: after LPAREN, seeing RPAREN shifts immediately
+// to call_no_args rather than trying to reduce a call_param_empty epsilon production.
+stmt_call_args : LPAREN stmt_call_arg_list RPAREN
+              | LPAREN RPAREN  -> call_no_args
+
+stmt_call_arg_list : stmt_call_arg (COMMA stmt_call_arg)*
+
+stmt_call_arg : expr COLON expr  -> call_param_pair
+              | expr             -> call_param
+              |                  -> call_param_empty
+
+// ─── SCAN / RSCAN ────────────────────────────────────────────────────────────
+// Four rules to avoid LALR(1) conflict from inline (KW_SCAN|KW_RSCAN) and
+// (KW_WHILE|KW_UNTIL) alternations — transformer maps all four to ScanStmt.
+scan_stmt : KW_SCAN  expr KW_WHILE     expr arrow_expr?  -> scan_while
+          | KW_SCAN  expr KW_WHILE NEQ expr arrow_expr?  -> scan_while_neq
+          | KW_SCAN  expr KW_UNTIL     expr arrow_expr?  -> scan_until
+          | KW_RSCAN expr KW_WHILE     expr arrow_expr?  -> rscan_while
+          | KW_RSCAN expr KW_WHILE NEQ expr arrow_expr?  -> rscan_while_neq
+          | KW_RSCAN expr KW_UNTIL     expr arrow_expr?  -> rscan_until
+
+arrow_expr : ARROW expr
+
+// ─── STACK / STORE ───────────────────────────────────────────────────────────
+stack_stmt : KW_STACK expr (COMMA expr)*  -> stack_
+store_stmt : KW_STORE expr (COMMA expr)*  -> store_
+
+// ─── USE / DROP ──────────────────────────────────────────────────────────────
+use_stmt  : KW_USE  NAME (COMMA NAME)*  -> use_
+drop_stmt : KW_DROP NAME (COMMA NAME)*  -> drop_
+
+// ─── ASSERT ──────────────────────────────────────────────────────────────────
+assert_stmt : KW_ASSERT expr COLON expr  -> assert_
+
+// ─── CODE ────────────────────────────────────────────────────────────────────
+// Instructions are sequences of octal/decimal integers.
+// code_body? handles empty CODE() blocks.
+code_stmt : KW_CODE LPAREN code_body? RPAREN  -> code_
+
+code_body : code_instr (SEMI code_instr)*
+
+code_instr : NUMBER_INT+
+
+// ─── Assignment, MOVE, expr-as-stmt ──────────────────────────────────────────
+// LHS is parsed as or_expr (level 8, no := at level 9) to avoid conflating
+// statement-level := with expression-level := (inside parens).
+//
+// After or_expr, lookahead decides:
+//   COMMA  → assign_multi (shift, more targets follow)
+//   ASSIGN → assign_single (shift)
+//   MOVE_LR / MOVE_RL → move (shift)
+//   other  → expr_stmt (reduce, e.g. bare call: name(args) )
+//
+// NAME COLON → label_stmt takes precedence (Lark shift preference, COLON not
+// valid in or_expr at statement level).
+
+move_or_assign : or_expr COMMA or_expr_list ASSIGN expr  -> assign_multi
+               | or_expr ASSIGN expr                      -> assign_single
+               | or_expr ASSIGN KW_CALL NAME stmt_call_args?  -> assign_call
+               | or_expr MOVE_LR move_rhs                -> move_lr
+               | or_expr MOVE_RL move_rhs                -> move_rl
+               | or_expr                                  -> expr_stmt
+
+or_expr_list : or_expr (COMMA or_expr)*
+
+// ─── MOVE rhs ────────────────────────────────────────────────────────────────
+// move_data: source expression, optional FOR count [unit] [-> next_addr]
+// move_fill_list: [constant, ...] fill pattern
+// move_concat: & (append)
+// move_fill_inline in move_part allows [fill] to participate in a move_chain:
+//   dest ':=' [" "] & src FOR count;  — fill + concat + source (seekfs pattern)
+//   dest ':=' [0];                    — standalone fill (single-part chain)
+//   dest ':=' [fill] -> @next;        — fill + arrow
+// LALR(1): LBRACK ∉ FIRST(expr) (primary never starts with LBRACK), so
+//          LBRACK in move_part unambiguously shifts into move_fill_inline.
+//          ARROW after RBRACK is not in FOLLOW(move_fill_inline) without arrow_expr?,
+//          so shift preference keeps it in the optional.
+move_rhs : move_part+  -> move_chain
+
+// mul_expr stops before AMP (add_op level) so "src & [fill]" does not consume
+// the concat separator into the source expression.
+// Complex source expressions (a+b) must be parenthesised: "(a+b) FOR n".
+move_part : mul_expr move_for_clause? arrow_expr?    -> move_data
+          | AMP                                      -> move_concat
+          | LBRACK const_fill RBRACK arrow_expr?     -> move_fill_inline
+
+// mul_expr stops before AMP (add_op level) so "for count & next_seg" does not
+// greedily consume the concat separator into the count expression.
+// Complex counts (a+b, n-1) must be parenthesised: "for (a+b) bytes".
+move_for_clause : KW_FOR mul_expr move_unit? arrow_expr?
+
+move_unit : KW_BYTES    -> unit_bytes
+          | KW_WORDS    -> unit_words
+          | KW_ELEMENTS -> unit_elements
+
+// fill_count: the multiplier in a repetition — NUMBER_INT or $FUNC(expr).
+// mul_expr allows field-access chains ($len(ptdd1.data^area)), indexed
+// references, and calls — everything up to but not including add-level ops.
+// LALR(1): NUMBER_INT as plain fill_item reduces on COMMA/RBRACK;
+//          NUMBER_INT as fill_count reduces on STAR.  Lookaheads disjoint, no conflict.
+//          RPAREN after mul_expr closes fill_count unambiguously.
+fill_count : NUMBER_INT
+           | DOLLAR_FUNC LPAREN mul_expr RPAREN  -> dollar_count
+
+const_fill : fill_item (COMMA fill_item)*
+fill_item : NUMBER_INT
+          | NUMBER_INT32
+          | NUMBER_FIXED
+          | NUMBER_REAL
+          | NUMBER_REAL64
+          | STRING_LIT
+          | CHAR_LIT
+          | NAME
+          | fill_count STAR LBRACK const_fill RBRACK  -> fill_repetition
+          | fill_count STAR NUMBER_INT                 -> fill_short_rep
+          | fill_count STAR NUMBER_INT32               -> fill_short_rep
+          | fill_count STAR NUMBER_FIXED               -> fill_short_rep
+          | fill_count STAR NUMBER_REAL                -> fill_short_rep
+          | fill_count STAR NUMBER_REAL64              -> fill_short_rep
+          | fill_count STAR STRING_LIT                 -> fill_short_rep
+          | fill_count STAR CHAR_LIT                   -> fill_short_rep
+
+// ─── Label ───────────────────────────────────────────────────────────────────
+// NAME COLON is unambiguous: COLON is not a valid continuation of or_expr at
+// statement level. Lark's shift preference ensures NAME COLON → label_stmt.
+label_stmt : NAME COLON statement  -> label
+
+// ─── Phase 7 placeholders ────────────────────────────────────────────────────
+// Consume the opening keyword only. Phase 7 replaces with full rules.
+// These never fire in Phase 6 tests (no IF/WHILE/FOR/DO/CASE inputs).
+if_stmt    : KW_IF    -> _placeholder_if
+while_stmt : KW_WHILE -> _placeholder_while
+for_stmt   : KW_FOR   -> _placeholder_for
+do_stmt    : KW_DO    -> _placeholder_do
+case_stmt  : KW_CASE  -> _placeholder_case

@@ -1,0 +1,49 @@
+// Phase 9 — Top-level program structure
+// Combined with (in order, all %declare stripped by parser constructor):
+//   expr.lark, common_decl.lark, var_decl.lark, struct_def.lark,
+//   literal_decl.lark, stmt_simple.lark (Phase-7 placeholders stripped),
+//   stmt_complex.lark, proc_body.lark, this file.
+// Start rule: program
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+program : top_item*  -> program_
+
+top_item : proc_unit              -> top_proc
+         | var_decl               -> top_var
+         | struct_decl            -> top_struct
+         | literal_decl           -> top_literal
+         | block_decl             -> top_block
+         | name_decl              -> top_name
+         | define_decl            -> top_define
+         | DIRECTIVE              -> top_directive
+         | SEMI                   -> top_semi
+         | KW_END SEMI            -> top_end
+
+// ─── NAME declaration ─────────────────────────────────────────────────────────
+// NAME identifier ;
+// NAME is non-reserved (emitted as NAME token, not KW_NAME).
+// First NAME = the keyword "NAME"; second NAME = the identifier.
+name_decl : NAME NAME SEMI  -> name_decl_
+
+// ─── BLOCK declaration ────────────────────────────────────────────────────────
+// BLOCK [identifier | PRIVATE] [AT(0) | BELOW(n)] ;
+//     data-declarations...
+// END BLOCK ;
+//
+// BLOCK modifier uses NAME for identifier, "PRIVATE", "AT", "BELOW" — all arrive
+// as NAME tokens since they're non-reserved. Transformer post-processes.
+block_decl : KW_BLOCK block_modifier SEMI block_body KW_END KW_BLOCK SEMI  -> block_decl_
+
+block_modifier : NAME block_loc?  -> block_named
+               | block_loc?       -> block_plain
+
+block_loc : NAME LPAREN NUMBER_INT RPAREN  -> block_loc_
+
+block_body : block_item*
+
+block_item : var_decl
+           | struct_decl
+           | literal_decl
+           | define_decl
+           | DIRECTIVE              -> block_directive
+           | SEMI                   -> block_semi

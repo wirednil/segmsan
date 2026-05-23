@@ -10,8 +10,7 @@ Builds an ImportNode tree for dependency reporting.
 from __future__ import annotations
 import os
 import sys
-from .lexer import Lexer
-from .parser import Parser
+from .transformers.program import parse_program_src
 from .ast_nodes import Program, Procedure, SourceImport, ImportNode, VarDecl, TalType
 
 
@@ -85,15 +84,20 @@ def _merge_file(program: Program, filepath: str, node: ImportNode,
             print(f"[IMPORT] Cannot read: {filepath}", file=sys.stderr)
         return
 
-    tokens = Lexer(source).tokenize()
-    included = Parser(tokens).parse(source_file=filepath)
+    try:
+        included = parse_program_src(source)
+    except Exception as e:
+        if not skip_missing:
+            print(f"[IMPORT] Parse error in {filepath}: {e}", file=sys.stderr)
+        return
+    included.source_file = filepath
 
     for decl in included.globals_:
         program.globals_.append(decl)
         node.n_globals += 1
 
     for proc in included.procedures:
-        proc.is_extern = True
+        proc.is_external = True
         program.procedures.append(proc)
         node.n_procs += 1
 

@@ -1,0 +1,75 @@
+// Phase 7 — Complex Statements (TAL Section 12)
+// Combined: expr.lark + stmt_simple.lark (Phase 7 section stripped) + this file
+// New terminals not in expr.lark or stmt_simple.lark:
+%declare DOT_DOT
+
+// ─── IF ──────────────────────────────────────────────────────────────────────
+// Uses or_expr (not expr) for the condition to avoid R/R conflict with
+// assign_expr : or_expr ASSIGN assign_expr when KW_ELSE appears in FOLLOW.
+// Two explicit alternatives handle dangling-else via shift preference.
+//
+// assign-as-condition: IF var := proc_call(args) THEN ...
+// LALR(1): after KW_IF or_expr, ASSIGN → shift (assign form), KW_THEN → plain form.
+// No conflict since ASSIGN ≠ KW_THEN.
+// RHS uses or_expr (not expr) to avoid R/R conflict: expr includes
+// assign_expr : or_expr ASSIGN assign_expr, which collides with expr : assign_expr
+// on KW_THEN lookahead.  or_expr covers all real cases (calls, arithmetic, etc.).
+if_stmt : KW_IF or_expr KW_THEN statement KW_ELSE statement                 -> if_else
+        | KW_IF or_expr KW_THEN statement                                   -> if_no_else
+        | KW_IF or_expr ASSIGN or_expr KW_THEN statement KW_ELSE statement  -> if_assign_else
+        | KW_IF or_expr ASSIGN or_expr KW_THEN statement                    -> if_assign_no_else
+
+// ─── WHILE ───────────────────────────────────────────────────────────────────
+while_stmt : KW_WHILE or_expr KW_DO statement  -> while_
+
+// ─── FOR ─────────────────────────────────────────────────────────────────────
+// Uses or_expr for from/to/step expressions (assign not valid there anyway).
+for_stmt : KW_FOR NAME ASSIGN or_expr for_direction or_expr for_step KW_DO statement  -> for_with_step
+         | KW_FOR NAME ASSIGN or_expr for_direction or_expr KW_DO statement           -> for_no_step
+
+for_direction : KW_TO      -> to_
+              | KW_DOWNTO  -> downto_
+
+for_step : KW_BY or_expr    -> by_step
+         | KW_STEP or_expr  -> step_alt
+
+// ─── DO...UNTIL ──────────────────────────────────────────────────────────────
+do_stmt : KW_DO statement KW_UNTIL or_expr  -> do_until
+
+// ─── CASE ────────────────────────────────────────────────────────────────────
+// LALR(1) approach: case_item alternatives use DIRECT TERMINALS (not sub-rule
+// case_label) to avoid Reduce/Reduce conflicts with primary : NAME and
+// primary : NUMBER_INT. This converts R/R to S/R (resolved by shift preference).
+//
+// Known limitations:
+//  - Multi-label items only support NUMBER_INT labels (not NAME labels).
+//  - Negative ranges (-5..-1) not supported; positive upper bounds only.
+//  - Unlabeled CASE items starting with NAME COMMA (multi-assign) not supported.
+// Two forms accepted by the TAL compiler:
+//   (1) OTHERWISE before END: ... OTHERWISE -> stmt; END;   (production files)
+//   (2) OTHERWISE after  END: ... END OTHERWISE -> stmt     (RefMan EBNF)
+// LALR(1): after case_body, lookahead KW_OTHERWISE → form 1; KW_END → shift,
+//   then lookahead KW_OTHERWISE → form 2, other → form 1 with empty otherwise.
+case_stmt : KW_CASE or_expr KW_OF KW_BEGIN case_body case_otherwise? KW_END  -> case_
+          | KW_CASE or_expr KW_OF KW_BEGIN case_body KW_END case_otherwise   -> case_
+
+case_body : (case_item SEMI)*  -> case_body_items
+
+case_item : NUMBER_INT COMMA case_int_more ARROW statement  -> case_multi_int_item
+          | NUMBER_INT DOT_DOT NUMBER_INT ARROW statement    -> case_int_range_item
+          | NAME DOT_DOT NAME ARROW statement                -> case_name_range_item
+          | NUMBER_INT ARROW statement                        -> case_num1_item
+          | MINUS NUMBER_INT ARROW statement                  -> case_neg1_item
+          | NAME ARROW statement                              -> case_name1_item
+          | statement                                         -> case_stmt_item
+
+// Additional int labels after the first in multi-label form
+case_int_more : case_int_tail (COMMA case_int_tail)*
+
+case_int_tail : NUMBER_INT DOT_DOT NUMBER_INT  -> case_int_range
+              | NUMBER_INT                      -> case_int_label
+              | MINUS NUMBER_INT                -> case_neg_label
+
+// Labeled CASE uses "OTHERWISE ->"; unlabeled uses "OTHERWISE" without arrow.
+case_otherwise : KW_OTHERWISE ARROW stmt_list  -> case_otherwise_body
+               | KW_OTHERWISE stmt_list        -> case_otherwise_body

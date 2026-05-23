@@ -78,7 +78,8 @@ def _check_stmts_bounds(stmts: list[Statement], guarded: frozenset,
 def _check_stmt_bounds(stmt: Statement, guarded: frozenset, source_file: str,
                        proc_name: str, warnings: list[Warning], literals: dict[str, int]):
     if isinstance(stmt, AssignStmt):
-        _check_expr_bounds(stmt.target, guarded, source_file, stmt.loc, proc_name, warnings, literals)
+        for t in stmt.targets:
+            _check_expr_bounds(t, guarded, source_file, stmt.loc, proc_name, warnings, literals)
         _check_expr_bounds(stmt.source, guarded, source_file, stmt.loc, proc_name, warnings, literals)
     elif isinstance(stmt, IfStmt):
         _check_expr_bounds(stmt.condition, guarded, source_file, stmt.loc, proc_name, warnings, literals)
@@ -92,7 +93,7 @@ def _check_stmt_bounds(stmt: Statement, guarded: frozenset, source_file: str,
     elif isinstance(stmt, ForStmt):
         _check_stmts_bounds(stmt.body, guarded, source_file, proc_name, warnings, literals)
     elif isinstance(stmt, CallStmt):
-        for arg in stmt.expr.args:
+        for arg in stmt.args:
             _check_expr_bounds(arg, guarded, source_file, stmt.loc, proc_name, warnings, literals)
 
 

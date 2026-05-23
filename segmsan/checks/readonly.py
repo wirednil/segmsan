@@ -39,7 +39,7 @@ def _check_stmt_readonly(
     warnings: list[Warning]
 ):
     if isinstance(stmt, AssignStmt):
-        target_name = _extract_base_name(stmt.target)
+        target_name = _extract_base_name(stmt.targets[0]) if stmt.targets else None
         if target_name and target_name.upper() in readonly:
             warnings.append(Warning(
                 kind=WarningKind.READONLY_ARRAY_MODIFICATION,

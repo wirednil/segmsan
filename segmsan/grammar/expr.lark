@@ -1,0 +1,144 @@
+// Phase 4 — Expression Grammar
+// TAL Section 4, Table 4-1: 10 levels of precedence (0-9).
+// Pre-tokenized stream via InteractiveParser.feed_token — no regex patterns needed.
+//
+// Unsigned operators are emitted as unique terminals (UADD, UMUL, etc.) by the
+// adapter to avoid LALR(1) shift/reduce conflicts that would arise if PRIME
+// were shared across add_op, mul_op, shift_op and cmp_op levels.
+//
+// PRIME is reserved for base-address symbols only: 'G', 'L', 'P', 'S', 'SG'.
+
+%declare SEMI COMMA COLON ASSIGN MINUS STAR SLASH
+%declare LPAREN RPAREN LBRACK RBRACK
+%declare DOT AT AMP
+%declare EQ NEQ LT GT LE GE
+%declare PLUS SHL SHR PRIME
+%declare NAME NUMBER_INT NUMBER_INT32 NUMBER_FIXED NUMBER_REAL NUMBER_REAL64
+%declare STRING_LIT CHAR_LIT DOLLAR_FUNC
+
+// Unsigned operator terminals (emitted as single tokens by the adapter)
+%declare UADD USUB UMUL UDIV UMOD USHL USHR
+%declare ULT UGT UEQ ULE UGE UNE
+
+// Keywords
+%declare KW_AND KW_OR KW_NOT KW_XOR KW_LAND KW_LOR
+%declare KW_IF KW_THEN KW_ELSE
+%declare KW_CASE KW_OF KW_BEGIN KW_END KW_OTHERWISE
+
+// ─── Entry point ─────────────────────────────────────────────────────────────
+expr : assign_expr
+
+// ─── Level 9: Assignment (lowest precedence) ─────────────────────────────────
+// Right-associative: a := b := 0  →  AssignExpr([a], AssignExpr([b], 0))
+assign_expr : or_expr ASSIGN assign_expr  -> assign
+            | or_expr
+
+// ─── Level 8: OR (boolean disjunction) ───────────────────────────────────────
+or_expr : and_expr (KW_OR and_expr)*  -> or_chain
+
+// ─── Level 7: AND (boolean conjunction) ──────────────────────────────────────
+and_expr : not_expr (KW_AND not_expr)*  -> and_chain
+
+// ─── Level 6: NOT (boolean negation) ─────────────────────────────────────────
+not_expr : KW_NOT not_expr  -> bool_not
+         | cmp_expr
+
+// ─── Level 5: Comparison / Relational ────────────────────────────────────────
+// FIRST(add_expr) and FIRST(cmp_op) are disjoint → no LALR(1) conflict.
+// Condition code: relational op without operands (e.g. IF < THEN ...).
+cmp_expr : add_expr cmp_op add_expr  -> cmp_binary
+         | cmp_op                    -> cmp_condition_code
+         | add_expr
+
+cmp_op : LT   -> op_lt
+       | GT   -> op_gt
+       | EQ   -> op_eq
+       | LE   -> op_le
+       | GE   -> op_ge
+       | NEQ  -> op_ne
+       | ULT  -> op_ult
+       | UGT  -> op_ugt
+       | UEQ  -> op_ueq
+       | ULE  -> op_ule
+       | UGE  -> op_uge
+       | UNE  -> op_une
+
+// ─── Level 4: Additive + Bitwise ──────────────────────────────────────────────
+add_expr : mul_expr (add_op mul_expr)*  -> add_chain
+
+add_op : PLUS    -> op_plus
+       | MINUS   -> op_minus
+       | UADD    -> op_uplus
+       | USUB    -> op_uminus
+       | KW_LOR  -> op_lor
+       | KW_LAND -> op_land
+       | KW_XOR  -> op_xor
+       | AMP     -> op_concat
+
+// ─── Level 3: Multiplicative ──────────────────────────────────────────────────
+mul_expr : shift_expr (mul_op shift_expr)*  -> mul_chain
+
+mul_op : STAR  -> op_star
+       | SLASH -> op_slash
+       | UMUL  -> op_ustar
+       | UDIV  -> op_uslash
+       | UMOD  -> op_umod
+
+// ─── Level 2: Bit shifts ──────────────────────────────────────────────────────
+shift_expr : unary_expr (shift_op unary_expr)*  -> shift_chain
+
+shift_op : SHL  -> op_shl
+         | SHR  -> op_shr
+         | USHL -> op_ushl
+         | USHR -> op_ushr
+
+// ─── Level 1+0: Unary + Postfix ───────────────────────────────────────────────
+unary_expr : PLUS unary_expr   -> unary_plus
+           | MINUS unary_expr  -> unary_minus
+           | postfix
+
+postfix : primary postfix_tail*  -> postfix_chain
+
+// postfix_tail uses distinct first tokens: DOT vs LBRACK vs LPAREN → no conflict.
+// bit_extract:  DOT LT NUMBER_INT ...  (DOT then LT)
+// field_access: DOT NAME               (DOT then NAME)
+// index_access: LBRACK expr RBRACK
+// call_postfix: LPAREN ...             (function/proc call)
+postfix_tail : DOT NAME                                     -> field_access
+             | LBRACK expr RBRACK                           -> index_access
+             | DOT LT NUMBER_INT (COLON NUMBER_INT)? GT     -> bit_extract
+             | call_args                                    -> call_postfix
+
+// ─── Primary ──────────────────────────────────────────────────────────────────
+primary : NUMBER_INT     -> lit_int
+         | NUMBER_INT32   -> lit_int32
+         | NUMBER_FIXED   -> lit_fixed
+         | NUMBER_REAL    -> lit_real
+         | NUMBER_REAL64  -> lit_real64
+         | STRING_LIT     -> lit_string
+         | CHAR_LIT       -> lit_char
+         | NAME           -> var_ref
+         | AT primary     -> address_of
+         | DOT primary    -> deref_expr
+         | DOLLAR_FUNC call_args  -> dollar_func
+         | DOLLAR_FUNC    -> dollar_func_bare
+         | LPAREN expr RPAREN   -> paren_expr
+         | PRIME NAME PRIME     -> base_addr
+         | if_expr
+         | case_expr
+
+// ─── Special expressions ──────────────────────────────────────────────────────
+if_expr   : KW_IF expr KW_THEN expr KW_ELSE expr  -> if_expression
+
+case_expr : KW_CASE expr KW_OF KW_BEGIN case_alt+ KW_END  -> case_expression
+
+case_alt  : KW_OTHERWISE expr SEMI  -> case_otherwise
+          | expr SEMI               -> case_branch
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+call_args : LPAREN call_arg_item (COMMA call_arg_item)* RPAREN  -> func_args
+          | LPAREN RPAREN                                        -> func_no_args
+
+call_arg_item : expr COLON expr  -> call_substring
+              | expr             -> call_plain_arg
+              |                  -> call_empty_arg

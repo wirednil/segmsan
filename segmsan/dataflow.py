@@ -236,11 +236,13 @@ class MemoryAnalyzer:
     def _analyze_stmt(self, stmt: Statement, state: DataflowState,
                       source_file: str, proc_name: str, scope: ScopeStack):
         match stmt:
-            case AssignStmt(target=target, source=source, loc=loc):
-                self._analyze_assignment(target, source, state, source_file, loc, proc_name, scope)
+            case AssignStmt(targets=targets, source=source, loc=loc):
+                target = targets[0] if targets else None
+                if target is not None:
+                    self._analyze_assignment(target, source, state, source_file, loc, proc_name, scope)
 
-            case CallStmt(expr=expr, loc=loc):
-                self._analyze_call(expr, state, source_file, loc, proc_name, scope)
+            case CallStmt(name=name, args=args, loc=loc):
+                self._analyze_call(name, args, state, source_file, loc, proc_name, scope)
 
             case IfStmt(then_body=then_body, else_body=else_body, condition=cond, loc=loc):
                 self._check_derefs_in_expr(cond, state, source_file, loc, proc_name, scope)
@@ -358,20 +360,20 @@ class MemoryAnalyzer:
             if ref != "(deref)" and state.is_tainted(ref):
                 pass
 
-    def _analyze_call(self, call: CallExpr, state: DataflowState,
+    def _analyze_call(self, name: str, args: list, state: DataflowState,
                       source_file: str, loc, proc_name: str, scope: ScopeStack):
-        for arg in call.args:
+        for arg in args:
             if isinstance(arg, AddressOfExpr):
                 inner_name = extract_var_name(arg.inner)
                 if inner_name and scope.is_local(inner_name):
-                    summary = self.proc_summaries.get(call.name.upper())
+                    summary = self.proc_summaries.get(name.upper())
                     if summary and summary.stores_refs_globally:
                         self.warnings.append(Warning(
                             kind=WarningKind.DANGLING_POINTER_STORE,
-                            message=f"@{inner_name} passed to '{call.name}' which stores "
+                            message=f"@{inner_name} passed to '{name}' which stores "
                                     f"references globally — dangling pointer risk",
                             loc=f"{source_file}{loc}",
-                            suggestion=f"Do not pass local addresses to {call.name}",
+                            suggestion=f"Do not pass local addresses to {name}",
                         ))
                     if inner_name:
                         for var_name, vs in state.vars.items():
@@ -446,11 +448,11 @@ def _summarize_stmts(stmts: list[Statement], summary: ProcSummary):
 
 def _summarize_stmt(stmt: Statement, summary: ProcSummary):
     match stmt:
-        case AssignStmt(target=target, source=source):
+        case AssignStmt(targets=targets, source=source):
             if isinstance(source, AddressOfExpr):
                 summary.takes_address_of_params = True
-        case CallStmt(expr=expr):
-            summary.calls_list.append(expr.name.upper())
+        case CallStmt(name=name):
+            summary.calls_list.append(name.upper())
         case IfStmt(then_body=then_body, else_body=else_body):
             _summarize_stmts(then_body, summary)
             _summarize_stmts(else_body, summary)

@@ -46,7 +46,7 @@ def build_reverse_graph(graph: dict[str, set[str]]) -> dict[str, set[str]]:
 
 def _collect_calls(stmt: Statement, out: set[str]) -> None:
     if isinstance(stmt, CallStmt):
-        out.add(stmt.expr.name.upper())
+        out.add(stmt.name.upper())
     if isinstance(stmt, AssignStmt):
         _collect_expr_calls(stmt.source, out)
     if isinstance(stmt, IfStmt):
@@ -221,7 +221,7 @@ def format_backtrace(program: Program, bt_str: str) -> str:
                 "words": 0,
             })
             continue
-        if proc.is_extern:
+        if proc.is_external:
             src = "*"
         else:
             src = os.path.basename(program.source_file) if program.source_file else "*"

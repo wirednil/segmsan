@@ -1,0 +1,37 @@
+// Phase 3 — LITERAL Declarations
+// Grammar for TAL LITERAL declarations with auto-increment semantics.
+//
+// Syntax: LITERAL name [ = constant ] { "," name [ = constant ] } ";"
+// When "= constant" is omitted: first entry → 0, subsequent → previous + 1.
+//
+// Phase 4: literal_value supports arithmetic and LITERAL name references.
+// eval_const_expr resolves names using previously-declared literals.
+
+%declare SEMI COMMA EQ MINUS PLUS STAR SLASH
+%declare LPAREN RPAREN
+%declare NAME NUMBER_INT NUMBER_INT32 NUMBER_FIXED
+%declare CHAR_LIT STRING_LIT
+%declare KW_LITERAL
+
+literal_decl : KW_LITERAL literal_entry (COMMA literal_entry)* SEMI
+
+// LALR(1): after NAME, EQ → literal_assigned; COMMA/SEMI → literal_auto.
+literal_entry : NAME EQ literal_value -> literal_assigned
+              | NAME                   -> literal_auto
+
+literal_value : lv_expr
+
+lv_expr  : lv_term ((PLUS | MINUS) lv_term)*
+
+lv_term  : lv_unary ((STAR | SLASH) lv_unary)*
+
+lv_unary : MINUS lv_unary
+         | lv_atom
+
+lv_atom : NUMBER_INT
+        | NUMBER_INT32
+        | NUMBER_FIXED
+        | CHAR_LIT
+        | STRING_LIT
+        | NAME
+        | LPAREN lv_expr RPAREN

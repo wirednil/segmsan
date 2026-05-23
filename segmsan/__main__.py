@@ -2,11 +2,9 @@
 
 import sys
 import os
-import re
 import argparse
 import json
-from .lexer import Lexer
-from .parser import Parser
+from .transformers.program import parse_program_src
 from .checks import run_all_checks
 from .report import format_report, format_json, Severity, WarningKind
 from .preprocessor import (
@@ -53,17 +51,9 @@ def main():
     if not args.no_preprocess:
         source, expansions = _preprocess_recursive(source, base_dir, args.import_dirs)
 
-    lexer = Lexer(source)
-    tokens = lexer.tokenize()
-
-    if lexer.errors:
-        for err in lexer.errors:
-            print(f"Lexer error: {err.message} (line {err.line}, col {err.col})",
-                  file=sys.stderr)
-
-    parser = Parser(tokens)
     try:
-        program = parser.parse(source_file=args.source)
+        program = parse_program_src(source)
+        program.source_file = args.source
     except Exception as e:
         print(f"Parse error: {e}", file=sys.stderr)
         sys.exit(2)

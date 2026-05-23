@@ -1,0 +1,96 @@
+// Shared grammar fragments — Phases 1-8
+// No start rule. Prepended to phase-specific grammars by parser constructors.
+// Contains every rule that appears in 2+ grammar files to prevent duplicate-rule
+// errors when all grammars are combined in Phase 8.
+
+%declare SEMI COMMA COLON MINUS STAR DOT KW_EXT
+%declare LPAREN RPAREN LBRACK RBRACK
+%declare PLUS SLASH EQ
+%declare NAME NUMBER_INT STRING_LIT
+%declare TK_INT TK_INT32 TK_REAL TK_REAL64 TK_FIXED TK_UNSIGNED TK_STRING
+%declare KW_MAIN KW_VARIABLE KW_CALLABLE KW_INTERRUPT
+%declare KW_PRIV KW_RESIDENT KW_EXTENSIBLE KW_LANGUAGE
+%declare KW_EXTERNAL KW_FORWARD
+
+// ─── Data type (var/struct/array declarations) ────────────────────────────
+data_type : TK_STRING
+          | TK_INT
+          | TK_INT32
+          | TK_REAL
+          | TK_REAL64
+          | TK_FIXED
+          | TK_UNSIGNED
+
+// ─── Return type (PROC/SUBPROC headers) ──────────────────────────────────
+// Same terminal set as data_type; kept as a separate rule for transformer
+// disambiguation (proc_header transformer dispatches on 'return_type').
+return_type : TK_STRING
+            | TK_INT
+            | TK_INT32
+            | TK_REAL
+            | TK_REAL64
+            | TK_FIXED
+            | TK_UNSIGNED
+
+// ─── Indirection (.  and  .EXT) ───────────────────────────────────────────
+indirection : DOT        -> ind_standard
+            | DOT KW_EXT -> ind_extended
+
+// ─── Structure pointer reference ──────────────────────────────────────────
+struct_ptr_ref : LPAREN NAME RPAREN
+
+// ─── Bounds expressions (shared by var_decl, struct_def, proc_header) ─────
+array_bounds : LBRACK bound_expr COLON bound_expr RBRACK
+
+// param_bounds mirrors array_bounds; kept separate so proc_header transformer
+// can dispatch on 'param_bounds' without aliasing to array_bounds.
+param_bounds : LBRACK bound_expr COLON bound_expr RBRACK
+
+bound_expr : be_expr
+
+be_expr  : be_term ((PLUS | MINUS) be_term)*
+
+be_term  : be_unary ((STAR | SLASH) be_unary)*
+
+be_unary : MINUS be_unary
+         | be_atom
+
+be_atom  : NUMBER_INT
+         | NAME
+         | LPAREN be_expr RPAREN
+
+// ─── Public name for Binder: = "name" ─────────────────────────────────────
+public_name : EQ STRING_LIT -> pub_name
+
+// ─── Parameter list ───────────────────────────────────────────────────────
+param_list : LPAREN param_entry (COMMA param_entry)* RPAREN
+
+param_entry : NAME COLON NAME                                      -> param_pair
+            | NAME                                               -> param_name
+            | return_type param_indir? NAME param_bounds?        -> typed_param_ext
+            | param_indir NAME param_bounds?                     -> typed_param_ptr
+            | KW_VARIABLE param_indir NAME param_bounds?         -> variable_param_pair
+
+param_indir : DOT KW_EXT -> p_ext
+            | DOT         -> p_std
+
+// ─── Procedure attributes ─────────────────────────────────────────────────
+proc_attrs : proc_attr (COMMA proc_attr)* -> attr_list
+           |                               -> no_attrs
+
+proc_attr : KW_MAIN       -> attr_main
+          | KW_VARIABLE   -> attr_variable
+          | KW_CALLABLE   -> attr_callable
+          | KW_INTERRUPT  -> attr_interrupt
+          | KW_PRIV       -> attr_priv
+          | KW_RESIDENT   -> attr_resident
+          | KW_EXTENSIBLE LPAREN NUMBER_INT RPAREN -> attr_extensible_n
+          | KW_EXTENSIBLE                           -> attr_extensible
+          | KW_LANGUAGE lang_spec                   -> attr_language
+
+// Language names (C, COBOL, FORTRAN, etc.) arrive as NAME tokens.
+lang_spec : NAME
+
+// ─── EXTERNAL / FORWARD ───────────────────────────────────────────────────
+ext_or_fwd : KW_EXTERNAL SEMI -> is_external
+           | KW_FORWARD SEMI   -> is_forward

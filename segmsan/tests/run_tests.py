@@ -6,10 +6,10 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tal_analyzer.lexer import Lexer
-from tal_analyzer.parser import Parser
-from tal_analyzer.checks import run_all_checks
-from tal_analyzer.report import format_report, WarningKind
+from segmsan.lexer import Lexer
+from segmsan.transformers.program import parse_program_src
+from segmsan.checks import run_all_checks
+from segmsan.report import format_report, WarningKind
 
 
 def test_lexer():
@@ -24,7 +24,7 @@ def test_lexer():
 
 
 def test_parser():
-    print("=== Parser Test ===")
+    print("=== Parser Test (Lark) ===")
     source = """
 PROC main;
     INT .ptr;
@@ -32,10 +32,7 @@ PROC main;
     .ptr := @buf;
 END;
 """
-    lexer = Lexer(source)
-    tokens = lexer.tokenize()
-    parser = Parser(tokens)
-    program = parser.parse("test.tal")
+    program = parse_program_src(source)
     print(f"  Procedures: {len(program.procedures)}")
     for proc in program.procedures:
         print(f"  PROC {proc.name}: {len(proc.locals_)} locals, {len(proc.body)} stmts")
@@ -53,15 +50,8 @@ def test_full_analysis():
     sample = os.path.join(test_dir, "sample1.tal")
     source = open(sample).read()
 
-    lexer = Lexer(source)
-    tokens = lexer.tokenize()
-    print(f"  Tokens: {len(tokens)}")
-    if lexer.errors:
-        for e in lexer.errors:
-            print(f"  Lexer error: {e.message} line={e.line}")
-
-    parser = Parser(tokens)
-    program = parser.parse(source_file=sample)
+    program = parse_program_src(source)
+    program.source_file = sample
     print(f"  Globals: {len(program.globals_)}")
     print(f"  Procedures: {len(program.procedures)}")
     for proc in program.procedures:
