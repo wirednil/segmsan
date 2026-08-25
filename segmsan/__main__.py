@@ -4,6 +4,8 @@ import sys
 import os
 import argparse
 import json
+import traceback
+from lark.exceptions import UnexpectedInput
 from .transformers.program import parse_program_src
 from .checks import run_all_checks
 from .report import format_report, format_json, Severity, WarningKind
@@ -49,13 +51,31 @@ def main():
     expansions = []
 
     if not args.no_preprocess:
-        source, expansions = _preprocess_recursive(source, base_dir, args.import_dirs)
+        try:
+            source, expansions = _preprocess_recursive(source, base_dir, args.import_dirs)
+        except Exception:
+            print("Internal error during DEFINE preprocessing (bug in segmsan,",
+                  "not a TAL syntax issue) — full traceback below:", file=sys.stderr)
+            traceback.print_exc()
+            sys.exit(2)
 
     try:
         program = parse_program_src(source)
         program.source_file = args.source
-    except Exception as e:
+    except UnexpectedInput as e:
+        # A genuine grammar mismatch against the TAL source: e already
+        # carries the line/column in the (preprocessed) source, so the
+        # concise message is enough — no need for a Python traceback.
         print(f"Parse error: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception:
+        # Anything else (AttributeError, IndexError, re.error, ...) is a
+        # bug in segmsan itself, not a TAL syntax problem. Show exactly
+        # which segmsan file/line raised it instead of a generic "Parse
+        # error" that looks the same as a real grammar mismatch.
+        print("Internal error while parsing (bug in segmsan, not a TAL",
+              "syntax issue) — full traceback below:", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(2)
 
     import_tree = resolve_imports(
