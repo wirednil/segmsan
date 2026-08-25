@@ -81,8 +81,15 @@ sub_hdr : return_type? KW_SUBPROC NAME param_list? KW_VARIABLE? SEMI  -> sub_hdr
 // constant_list ([1,2,3]) is kept as a separate alternative because it
 // starts with LBRACK which is not a valid expr primary (only postfix_tail),
 // making the two alternatives unambiguous for LALR(1).
-// top_repetition (N*[...]) is intentionally omitted from proc scope —
-// it is only meaningful for global array initializers.
+// top_repetition (N*[...]) IS meaningful at proc scope too — real usage:
+//   string .buf[0:7] := 5 * [ " " ];   -- pad a local STRING with spaces
+// Unambiguous with add_expr's own multiplication (`5 * 3`): after
+// NUMBER_INT STAR, lookahead LBRACK can't continue as add_expr's mul_expr
+// (LBRACK isn't in FIRST(unary_expr) — expr.lark's primary has no bare
+// LBRACK alternative), so LALR(1) shifts into top_repetition instead.
+// The unbracketed short form (N * literal, e.g. top_short_repetition) is
+// deliberately NOT added here: `5 * 3` is genuinely ambiguous with
+// add_expr's ordinary multiplication and would be a real LALR conflict.
 // Level boundary: use add_expr, NOT or_expr or expr.
 //
 // or_expr includes cmp_expr which uses EQ as a comparison operator.
@@ -101,6 +108,7 @@ sub_hdr : return_type? KW_SUBPROC NAME param_list? KW_VARIABLE? SEMI  -> sub_hdr
 //   literals:       5, -1, "str"                 via primary
 //   if_expr/case:   IF cond THEN a ELSE b        via primary (reachable)
 %override init_val : constant_list
+                   | NUMBER_INT STAR LBRACK const_seq RBRACK -> top_repetition
                    | add_expr
 
 // ─── Substring postfix: name[offset] FOR count ────────────────────────────────

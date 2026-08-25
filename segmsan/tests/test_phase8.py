@@ -1791,6 +1791,40 @@ END;
 _run("test_while_null_body", test_while_null_body)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Group 29: repetition-fill initializer (N * [const]) on a proc-local var decl.
+# Real usage (PTLFTIMS.tal): padding a local STRING array with spaces.
+# proc_body.lark's %override init_val had dropped top_repetition, assuming
+# it was "only meaningful for global array initializers" — real code proves
+# that assumption wrong.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_local_var_repetition_initializer():
+    p = _parse("""
+PROC test;
+BEGIN
+    STRING .buf[0:7] := 5 * [ " " ];
+    RETURN;
+END;
+""")
+    assert len(p.locals_) >= 1
+
+def test_local_var_repetition_initializer_multi_decl():
+    # The exact shape from PTLFTIMS.tal: comma-separated multi-var decl,
+    # each with its own bounds and repetition-fill initializer.
+    p = _parse("""
+PROC test;
+BEGIN
+    STRING .ATM[0:7]   := 5 * [ " " ],
+           .FECHA[0:5] := 6 * [ " " ];
+    RETURN;
+END;
+""")
+    assert len(p.locals_) >= 2
+
+_run("test_local_var_repetition_initializer", test_local_var_repetition_initializer)
+_run("test_local_var_repetition_initializer_multi_decl", test_local_var_repetition_initializer_multi_decl)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Report
 # ─────────────────────────────────────────────────────────────────────────────
 
