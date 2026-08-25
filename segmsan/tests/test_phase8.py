@@ -1713,6 +1713,84 @@ END;
 _run("test_fill_count_dollar_func_field", test_fill_count_dollar_func_field)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Group 27: BYTES/WORDS/ELEMENTS as contextual keywords, not reserved words
+# Bug: real TAL code has procs literally named WORDS/BYTES/ELEMENTS (e.g. a
+#      word-count helper called as `words(n)`); the lexer unconditionally
+#      promoted any IDENT matching those names to KW_WORDS/etc, breaking the
+#      call. Fixed by only promoting when NOT immediately followed by '(' .
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_words_as_proc_call_not_promoted():
+    p = _parse("""
+PROC test;
+BEGIN
+    INT n;
+    n := words( n );
+    RETURN;
+END;
+""")
+    assert len(p.body) >= 1
+
+_run("test_words_as_proc_call_not_promoted", test_words_as_proc_call_not_promoted)
+
+def test_bytes_as_proc_call_not_promoted():
+    p = _parse("""
+PROC test;
+BEGIN
+    INT n;
+    n := bytes( n );
+    RETURN;
+END;
+""")
+    assert len(p.body) >= 1
+
+_run("test_bytes_as_proc_call_not_promoted", test_bytes_as_proc_call_not_promoted)
+
+def test_words_call_and_move_unit_together():
+    # Both uses of WORDS in the same proc: a real call and the move-clause
+    # unit keyword. Regression for the exact shape found in production code
+    # (w^init-style macro expansion calling a `words(...)` helper alongside
+    # an ordinary `FOR n WORDS` move).
+    p = _parse("""
+PROC test;
+BEGIN
+    STRING .dst, .src;
+    INT n;
+    n := words( n );
+    dst ':=' src FOR n WORDS;
+    RETURN;
+END;
+""")
+    assert len(p.body) >= 2
+    assert isinstance(p.body[0], AssignStmt)
+    from segmsan.ast_nodes import MoveStmt
+    assert isinstance(p.body[1], MoveStmt)
+    assert p.body[1].unit == "WORDS"
+
+_run("test_words_call_and_move_unit_together", test_words_call_and_move_unit_together)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Group 28: WHILE with a null-statement body (RefMan 7900-7903: a bare ';'
+# in place of a statement). Real usage (moniliqs): all the work happens via
+# a side-effecting assignment inside the condition itself.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_while_null_body():
+    p = _parse("""
+PROC test;
+BEGIN
+    INT i, n;
+    WHILE (i := i + 1) < n DO;
+    RETURN;
+END;
+""")
+    from segmsan.ast_nodes import WhileStmt
+    assert isinstance(p.body[0], WhileStmt)
+    assert p.body[0].body == []
+
+_run("test_while_null_body", test_while_null_body)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Report
 # ─────────────────────────────────────────────────────────────────────────────
 

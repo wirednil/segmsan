@@ -63,6 +63,70 @@ def test_collect_multiline_define():
     assert "int x;" in cleaned
 
 
+def test_collect_multi_name_define():
+    # Real TAL syntax: one DEFINE statement can declare several macros,
+    # each terminated by '#' and separated by ',', ending at the ';'
+    # after the last '#'. Seen in production BASE24 sources, e.g.:
+    #   define a = body_a #,
+    #          b = body_b #;
+    src = (
+        "define moni_realtime_mde_d =\n"
+        "                   ( flag^g = 1 )          #,\n"
+        "         moni_oldptlf_mde_d   =\n"
+        "                   ( flag^g = 2 )           #;\n"
+        "int x;\n"
+    )
+    macros, cleaned = collect_defines(src)
+    assert len(macros) == 2
+    assert macros[0].name == "moni_realtime_mde_d"
+    assert "flag^g = 1" in macros[0].body
+    assert macros[1].name == "moni_oldptlf_mde_d"
+    assert "flag^g = 2" in macros[1].body
+    assert "define" not in cleaned.lower()
+    assert cleaned.count('\n') == src.count('\n')
+    assert "int x;" in cleaned
+
+
+def test_collect_multi_name_define_with_params():
+    # Multi-name form where entries also take parameters, e.g.:
+    #   define halt^d( x ) = ... #, check^d( x ) = if <> then halt^d( x ) #;
+    src = (
+        "define halt^d( x )  = call abort( x ) #,\n"
+        "       check^d( x ) = if <> then halt^d( x ) #;\n"
+        "int x;\n"
+    )
+    macros, cleaned = collect_defines(src)
+    assert len(macros) == 2
+    assert macros[0].name == "halt^d"
+    assert macros[0].params == ["x"]
+    assert macros[1].name == "check^d"
+    assert macros[1].params == ["x"]
+    assert "int x;" in cleaned
+
+
+def test_multi_name_define_parses_end_to_end():
+    # Regression for a real parse failure: without multi-name DEFINE support,
+    # the ',' after the first macro's '#' was left in the cleaned source and
+    # broke the top-level declaration grammar.
+    src = (
+        "?SECTION test\n"
+        "define   a_d =\n"
+        "                   ( flag^g = 1 )          #,\n"
+        "         b_d   =\n"
+        "                   ( flag^g = 2 )           #;\n"
+        "\n"
+        "INT proc test^multi;\n"
+        "BEGIN\n"
+        "  INT flag^g;\n"
+        "  IF a_d THEN\n"
+        "    RETURN 1;\n"
+        "  RETURN 0;\n"
+        "END;\n"
+    )
+    program = parse_program_src(src)
+    assert program is not None
+
+
 # ---------------------------------------------------------------------------
 # expand_macros — no-param macros
 # ---------------------------------------------------------------------------

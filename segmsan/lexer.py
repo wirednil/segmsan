@@ -83,10 +83,13 @@ KEYWORDS = {
     "SHL", "SHR",
     "MOD",
     "DROP", "INTO",
-    "STEP",
-    "BYTES",
     "FORWARD",
 }
+# NOTE: STEP, BYTES, WORDS, ELEMENTS are intentionally NOT in KEYWORDS above —
+# they are contextual (TAL allows a real PROC/variable named e.g. "words" or
+# "step"), not reserved. They tokenize as IDENT here and get promoted to
+# KW_STEP/KW_BYTES/KW_WORDS/KW_ELEMENTS downstream (see _STMT_PROMOTE in
+# to_proc_body_stream) only when not immediately followed by '('.
 
 TYPE_KEYWORDS = {
     "INT", "STRING", "REAL", "FIXED", "UNSIGNED",
@@ -142,7 +145,18 @@ class Lexer:
         ch = self._ch()
         if ch == "!":
             next_ch = self._ch(1)
-            if next_ch and (next_ch.isalpha() or next_ch == "_"):
+            # `!IDENT!` is only a bang-define (emitted as a real IDENT token)
+            # right where a new argument is expected — i.e. immediately after
+            # '(' or ',' — matching the real usage of annotating an OMITTED
+            # positional argument: `f(a, !param_x!, !param_y!, b)`. Anywhere
+            # else (e.g. right after a value with no comma, `true !updt!`)
+            # it's an ordinary comment ANNOTATING that value, not replacing
+            # a missing one, and must not be emitted as a token — doing so
+            # left a stray IDENT with no separator, breaking the call's
+            # argument list (`true !updt!` -> `true updt`, unexpected NAME).
+            prev = self.tokens[-1].type if self.tokens else None
+            at_arg_start = prev in (TokenType.LPAREN, TokenType.COMMA)
+            if at_arg_start and next_ch and (next_ch.isalpha() or next_ch == "_"):
                 i = self.pos + 1
                 paren_depth = 0
                 valid_id = True
@@ -164,6 +178,32 @@ class Lexer:
                     if not (c.isalnum() or c in ("_", "^", "#")):
                         valid_id = False
                     i += 1
+
+            # Short symbolic comment closed on the same line with NO
+            # whitespace between the bangs (e.g. `!<=!`, `!01007!`) — treat
+            # the pair as real delimiters and stop there, so code right
+            # after the closing '!' (like a comma in a call's argument
+            # list) isn't swallowed. A comment containing whitespace runs
+            # to end of line even if it has an internal '!' — that's very
+            # likely natural-language text using '!' as punctuation, not a
+            # deliberate closing delimiter (see test_comment_with_internal_
+            # exclamation: `! 1025 words! OVERFLOW WARNING`).
+            j = self.pos + 1
+            has_ws = False
+            closing = -1
+            while j < len(self.source) and self.source[j] != "\n":
+                cj = self.source[j]
+                if cj in (" ", "\t"):
+                    has_ws = True
+                    break
+                if cj == "!":
+                    closing = j
+                    break
+                j += 1
+            if closing > self.pos + 1 and not has_ws:
+                while self.pos <= closing:
+                    self._advance()
+                return True
 
             self._advance()
             while self.pos < len(self.source):
@@ -893,8 +933,25 @@ def to_stmt_stream(tokens: list[Token]):
 def to_proc_body_stream(tokens: list[Token]):
     it = iter(tokens)
     prev_type: str | None = None
-    for t in it:
-        if t.type == TokenType.EOF:
+    pending: Token | None = None
+
+    def _next_raw() -> Token | None:
+        nonlocal pending
+        if pending is not None:
+            t2 = pending
+            pending = None
+            return t2
+        return next(it, None)
+
+    def _peek_raw() -> Token | None:
+        nonlocal pending
+        if pending is None:
+            pending = next(it, None)
+        return pending
+
+    while True:
+        t = _next_raw()
+        if t is None or t.type == TokenType.EOF:
             return
 
         if t.type == TokenType.KEYWORD and t.value.upper() == "DEFINE":
@@ -926,6 +983,17 @@ def to_proc_body_stream(tokens: list[Token]):
                 tok = LarkToken("NAME", t.value, line=t.line, column=t.col)
             elif upper in _PROMOTE_FROM_IDENT:
                 tok = LarkToken(f"KW_{upper}", t.value, line=t.line, column=t.col)
+            elif upper in _STMT_PROMOTE:
+                # BYTES/WORDS/ELEMENTS/STEP are contextual, not reserved: TAL
+                # allows a real PROC/variable with one of these names (e.g. a
+                # `words(...)` helper proc). Only promote to the keyword when
+                # it's NOT immediately followed by '(' — a call/identifier use.
+                nxt = _peek_raw()
+                if nxt is not None and nxt.type == TokenType.LPAREN:
+                    tok = LarkToken("NAME", t.value, line=t.line, column=t.col)
+                else:
+                    tok = LarkToken(_STMT_PROMOTE[upper], t.value,
+                                    line=t.line, column=t.col)
             elif upper in _PROC_BODY_PROMOTE:
                 tok = LarkToken(_PROC_BODY_PROMOTE[upper], t.value,
                                 line=t.line, column=t.col)

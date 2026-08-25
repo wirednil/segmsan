@@ -2,10 +2,10 @@
 // Shared rules (data_type, indirection, struct_ptr_ref, array_bounds, bound_expr family)
 // live in common_decl.lark, which the parser constructor prepends.
 
-// Terminals unique to var_decl (all others are declared in common_decl.lark)
+// Terminals unique to var_decl (all others are declared in common_decl.lark,
+// including DOLLAR_FUNC — used both here in var_initializer and in be_atom)
 %declare ASSIGN PRIME
 %declare NUMBER_INT32 NUMBER_FIXED NUMBER_REAL NUMBER_REAL64
-%declare DOLLAR_FUNC
 
 var_decl : data_type var_item (COMMA var_item)* SEMI
 

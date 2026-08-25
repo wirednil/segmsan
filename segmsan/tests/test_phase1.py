@@ -139,6 +139,24 @@ def test_array_int():
     assert d[0].array_bounds == ArrayBounds(0, 9)
 
 
+def test_array_bound_dollar_func_field_access():
+    # Regression: real-world bound `[0:($len(moni^cfg.process) - 1)]` (from
+    # BASE24-pos moniliqs) failed to parse — be_atom had no DOLLAR_FUNC or
+    # dotted-field-access alternative, only NUMBER_INT/STRING_LIT/CHAR_LIT/NAME.
+    d = _parse("STRING key[0:($len(moni^cfg.process) - 1)];")
+    assert d[0].tal_type == TalType.STRING
+
+
+def test_array_bound_dotted_name():
+    d = _parse("INT arr[0:tbl.max_idx];")
+    assert d[0].tal_type == TalType.INT
+
+
+def test_array_bound_dollar_func_no_args():
+    d = _parse("INT arr[0:$dollar];")
+    assert d[0].tal_type == TalType.INT
+
+
 def test_array_with_init_list():
     d = _parse("INT arr[0:2] := [1, 2, 3];")
     assert d[0].array_bounds == ArrayBounds(0, 2)
@@ -238,11 +256,29 @@ def test_comment_end_of_line_with_bang():
 
 
 def test_bang_define_not_broken():
+    # Real usage (ohpdhqs.tal): `!ident!` annotates an OMITTED positional
+    # call argument — only meaningful right after '(' or ',', where a real
+    # argument value is expected. Emitted as an IDENT there.
     from segmsan.lexer import Lexer
-    src = '!my_macro!\nINT x := 1;\n'
+    src = 'x := f( a, !my_macro!, b );\n'
     tokens = Lexer(src).tokenize()
     names = [t.value for t in tokens if str(t.type) == 'TokenType.IDENT']
     assert 'my_macro' in names
+
+
+def test_bang_after_value_stays_comment_not_ident():
+    # Regression: `true !updt!` (a value ANNOTATED by a trailing comment,
+    # not an omitted-argument slot) previously still emitted 'updt' as an
+    # IDENT since it looked like a clean identifier, leaving two tokens
+    # with no separator ('true' NAME 'updt') and breaking the call's
+    # argument list. `!IDENT!` must stay a plain comment anywhere except
+    # right after '(' or ','.
+    from segmsan.lexer import Lexer
+    src = 'x := f( a, true !updt! );\n'
+    tokens = Lexer(src).tokenize()
+    idents = [t.value for t in tokens if str(t.type) == 'TokenType.IDENT']
+    assert 'updt' not in idents
+    assert idents == ['x', 'f', 'a', 'true']
 
 
 def test_double_dash_comment_still_works():
@@ -250,6 +286,21 @@ def test_double_dash_comment_still_works():
     src = 'INT x := 1; -- this is a comment\nINT y := 2;\n'
     tokens = Lexer(src).tokenize()
     assert sum(1 for t in tokens if str(t.type) == 'TokenType.NUMBER') == 2
+
+
+def test_comment_closes_on_same_line_no_whitespace():
+    # Regression: a short symbolic comment with no space between the bangs
+    # (e.g. `!<=!` inline-annotating a call argument) was swallowing the
+    # rest of the line up to '\n' instead of stopping at its own closing
+    # '!', eating a trailing comma in a real-world call argument list:
+    #   compare^ascii^yymmdd( a, 3 !<=!, b )
+    from segmsan.lexer import Lexer
+    src = 'x := f( a, 3 !<=!, b );\n'
+    tokens = Lexer(src).tokenize()
+    idents = [t.value for t in tokens if str(t.type) == 'TokenType.IDENT']
+    assert idents == ['x', 'f', 'a', 'b']
+    commas = sum(1 for t in tokens if str(t.type) == 'TokenType.COMMA')
+    assert commas == 2
 
 
 # ---------------------------------------------------------------------------

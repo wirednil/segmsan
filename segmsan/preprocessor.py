@@ -6,9 +6,12 @@ Runs on raw text BEFORE lexing, simulating what the TAL compiler does.
 DEFINE syntax:
   define NAME = replacement#;
   define NAME(p1, p2, ...) = replacement#;
+  define NAME1 = replacement1#, NAME2 = replacement2#, ... , NAMEn = replacementn#;
 
-The '#' terminates the macro body. Parameters are substituted textually.
-Expansion is repeated until no more macros are found (handles nesting).
+A single DEFINE statement can declare multiple macros, each terminated by '#'
+and separated by ','; the whole statement ends at the ';' after the last '#'.
+Parameters are substituted textually. Expansion is repeated until no more
+macros are found (handles nesting).
 """
 
 from __future__ import annotations
@@ -36,45 +39,66 @@ class ExpansionRecord:
     expanded_end_line: int
 
 
-_DEFINE_RE = re.compile(
-    r'^\s*define\s+([A-Za-z_][\w^]*)\s*'
+_DEFINE_START_RE = re.compile(r'^\s*define\s+', re.IGNORECASE | re.MULTILINE)
+
+_DEFINE_ENTRY_RE = re.compile(
+    r'\s*([A-Za-z_][\w^]*)\s*'
     r'(?:\(([^)]*)\)\s*)?'
     r'=\s*'
     r'(.*?)#',
-    re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    re.DOTALL,
 )
 
-_DEFINE_LINE_RE = re.compile(
-    r'^\s*define\s+[A-Za-z_][\w^]*\s*(?:\([^)]*\)\s*)?=\s*.*?#',
-    re.DOTALL | re.MULTILINE | re.IGNORECASE,
-)
+_WS_RE = re.compile(r'\s*', re.DOTALL)
 
 
 def collect_defines(source: str) -> tuple[list[DefineMacro], str]:
-    source_lines = source.split('\n')
     macros: list[DefineMacro] = []
-    for m in _DEFINE_RE.finditer(source):
-        name = m.group(1)
-        params_raw = m.group(2) or ""
-        params = [p.strip() for p in params_raw.split(",") if p.strip()]
-        body = m.group(3).strip()
-        def_line = source[:m.start()].count('\n') + 1
-        body_start = source[:m.start(3)].count('\n') + 1
-        body_line_count = body.count('\n') + 1 if body else 1
-        context = []
-        for i in range(def_line - 1, min(def_line - 1 + body_line_count + 2, len(source_lines))):
-            context.append(source_lines[i].rstrip('\n'))
-        macros.append(DefineMacro(
-            name=name, params=params, body=body,
-            line=def_line, body_start_line=body_start,
-            body_lines=body_line_count,
-        ))
+    spans: list[tuple[int, int]] = []
 
-    def _blank_preserve(m: re.Match) -> str:
-        n = m.group(0).count('\n')
-        return '\n' * n
+    for start_m in _DEFINE_START_RE.finditer(source):
+        stmt_start = start_m.start()
+        if spans and stmt_start < spans[-1][1]:
+            continue  # inside a define statement already consumed
+        pos = start_m.end()
+        stmt_end = pos
+        while True:
+            m = _DEFINE_ENTRY_RE.match(source, pos)
+            if not m:
+                break
+            name = m.group(1)
+            params_raw = m.group(2) or ""
+            params = [p.strip() for p in params_raw.split(",") if p.strip()]
+            body = m.group(3).strip()
+            def_line = source[:m.start(1)].count('\n') + 1
+            body_start = source[:m.start(3)].count('\n') + 1
+            body_line_count = body.count('\n') + 1 if body else 1
+            macros.append(DefineMacro(
+                name=name, params=params, body=body,
+                line=def_line, body_start_line=body_start,
+                body_lines=body_line_count,
+            ))
+            pos = m.end()
+            stmt_end = pos
+            ws_end = pos + _WS_RE.match(source, pos).end() - pos
+            if ws_end < len(source) and source[ws_end] == ',':
+                pos = ws_end + 1
+                stmt_end = pos
+                continue
+            if ws_end < len(source) and source[ws_end] == ';':
+                stmt_end = ws_end + 1
+            break
+        spans.append((stmt_start, stmt_end))
 
-    cleaned = _DEFINE_LINE_RE.sub(_blank_preserve, source)
+    cleaned_parts = []
+    last = 0
+    for start, end in spans:
+        cleaned_parts.append(source[last:start])
+        cleaned_parts.append('\n' * source[start:end].count('\n'))
+        last = end
+    cleaned_parts.append(source[last:])
+    cleaned = "".join(cleaned_parts)
+
     return macros, cleaned
 
 
@@ -151,7 +175,11 @@ def _substitute_params(body: str, params: list[str], args: list[str]) -> str:
         escaped = re.escape(param_stripped)
         result = re.sub(
             r'(?<![A-Za-z0-9_^])' + escaped + r'(?![A-Za-z0-9_^])',
-            arg_stripped,
+            lambda _m, _r=arg_stripped: _r,  # literal replacement — arg text may
+                                              # contain '\' sequences (e.g. \F, \E
+                                              # format placeholders) that re.sub
+                                              # would otherwise mis-parse as regex
+                                              # backreferences and raise re.error
             result,
         )
     return result

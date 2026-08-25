@@ -20,7 +20,12 @@ if_stmt : KW_IF or_expr KW_THEN statement KW_ELSE statement                 -> i
         | KW_IF or_expr ASSIGN or_expr KW_THEN statement                    -> if_assign_no_else
 
 // ─── WHILE ───────────────────────────────────────────────────────────────────
+// Null statement (RefMan 7900-7903): a bare ';' in place of a statement,
+// legal wherever a statement is legal (except right before ELSE/UNTIL).
+// Real usage: `WHILE (i := i+1) < n AND cond DO;` — loop body is empty,
+// all work happens via the side-effecting assignment in the condition.
 while_stmt : KW_WHILE or_expr KW_DO statement  -> while_
+           | KW_WHILE or_expr KW_DO SEMI       -> while_empty
 
 // ─── FOR ─────────────────────────────────────────────────────────────────────
 // Uses or_expr for from/to/step expressions (assign not valid there anyway).

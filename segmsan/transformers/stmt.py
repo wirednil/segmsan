@@ -415,6 +415,12 @@ class StmtTransformer(ExprTransformer):
         stmts = [x for x in items if isinstance(x, Statement)]
         return WhileStmt(condition=exprs[0], body=stmts, loc=_tok_loc(items))
 
+    def while_empty(self, items) -> WhileStmt:
+        # Null-statement body: `WHILE cond DO;` — all work happens via
+        # side effects in the condition expression itself.
+        exprs = [x for x in items if isinstance(x, Expr)]
+        return WhileStmt(condition=exprs[0], body=[], loc=_tok_loc(items))
+
     # ─── Phase 7: FOR ─────────────────────────────────────────────────────────
 
     def for_with_step(self, items) -> ForStmt:

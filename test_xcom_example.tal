@@ -1,0 +1,153 @@
+?SYMBOLS, INSPECT, SAVEABEND, NOCODE
+?RELOCATE
+?ERRORS 15
+
+-- ***************************************************************************
+--
+--   XCOM API Example Program.
+--
+--   N.B. - The API requires
+--     ADD DEFINE =xcom62-program, class map, file <xcom program file name>
+--
+-- ***************************************************************************
+
+NAME XCOM^EXAMPLE^PROGRAM;
+
+BLOCK XCOM^EXAMPLE^GLOBALS;
+?NOLIST, SOURCE scidict2.xapital      ! TAL definition of XCOM api structure
+?SEARCH BULKIO3.apio                  ! XCOM api object code
+?LIST
+
+LITERAL
+    xcom^true = -1,
+    xcom^false = 0;
+
+DEFINE
+    NULL = [0]#;
+
+END BLOCK ; ! XCOM^EXAMPLE^GLOBALS
+?SOURCE sci.apideft(xcom62^api) ! External declaration of XCOM62^API
+?SOURCE $system.system.extdecs0(AWAITIOX, DELAY, FILEINFO)
+PROC calculate^the^mandelbrot^set;
+     EXTERNAL;
+?PAGE "XCOM^EXAMPLE"
+PROC XCOM^EXAMPLE MAIN;
+
+BEGIN
+
+INT
+        return^code,
+        num^bytes,
+        error,
+       .EXT pid[0:3],
+       .EXT xcom^file^number[0:0],
+       .EXT int^ptr
+        ;
+
+STRUCT
+       .EXT transfer (api^transfer^def)
+        ;
+
+
+
+-- ************************************************************************
+-- Fill the structure to be passed to XCOM62^API with NULLs.
+-- ************************************************************************
+
+@int^ptr := @transfer;
+int^ptr[0] := 0;
+int^ptr[1] ':=' int^ptr[0] FOR (($LEN(transfer) + 1) / 2) - 1;
+
+
+-- ************************************************************************
+-- Move appropriate values to structure fields
+-- ************************************************************************
+
+transfer.version := 2;
+transfer.apiversion := 3;
+transfer.command := xcom^send^file;       ! send a file to remote system !
+transfer.wait := 0;                       ! wait for transfer to complete !
+transfer.configfile ':=' ["$clx12.sci.rosecnf", 0]; ! name of config file!
+
+transfer.luname ':=' ["LU338B00", 0];     ! name of local LU !
+transfer.rluname ':=' ["XCOMQA", 0];      ! name of remote LU !
+transfer.idest ':=' NULL;                 ! intermediate destination !
+transfer.xmode ':=' ["XCOMMODE", 0];      ! mode used by XCOM !
+transfer.nullfill ':=' ["N"];             ! null fill flag for text files !
+transfer.localnotify ':=' ["sci.manager", 0]; ! name of user to notify !
+transfer.xfile ':=' ["$clx12.sci.xdefsh", 0]; ! name of local file !
+transfer.rfile ':=' ["DA1RL04.APITEST", 0];   ! name of remote file !
+transfer.xlogfile ':=' ["sci.xcomlog", 0];! name of xcom log file !
+transfer.compression ':=' ["Y"];          ! compression     !
+transfer.notify ':=' ["Y"];               ! notify flag !
+transfer.who ':=' ["DA1RL04", 0];         ! who to notify on remote system !
+transfer.remoteuser ':=' ["DA1RL04", 0];  ! remote user id !
+transfer.fileaction ':=' ["C"];           ! file action !
+transfer.carriageflag ':=' ["Y"];         ! carriage return flag !
+transfer.codeflag ':=' ["E"];             ! code flag !
+transfer.password ':=' ["X", 0];          ! remote user password !
+transfer.appcprocessname ':=' ["$icel", 0];    ! Snax appc process name !
+transfer.appcopenname ':='["#XCOM338", 0];     ! additional qualifiers for ope
+transfer.appctype ':=' ["I"];             ! use snax appc or ice calls !
+transfer.guardianfiletype ':=' ["ED"];    ! Tandem filetype:           !
+                                          !        EDit file            !
+                                          !        ENtry sequenced file !
+                                          !        RElative file        !
+                                          !        UNstructured file    !
+transfer.spoolcollector ':=' ["$S1", 0];  ! use this collector for reports !
+                                          !     and job execution          !
+transfer.xdir ':=' ["$CLX12.SCI", 0];     ! default directory              !
+! transfer.max_snax_iosize ':=' [0];  !   ! pick this up from config file  !
+
+     ! File creation parameters !
+transfer.prialloc ':=' ["00128", 0];      ! primary allocation             !
+transfer.secalloc ':=' ["00512", 0];      ! secondary allocation           !
+transfer.recfm ':=' ["VB", 0];            ! record format !
+transfer.lrecl ':=' ["00128", 0];         ! lrecl !
+transfer.blksize ':=' ["02048", 0];       ! physical block size !
+transfer.volume ':=' NULL;                ! volume to create file on !
+transfer.xunit ':=' NULL;                 ! unit to create file on !
+
+     ! Job Control Information !
+transfer.uic ':=' NULL;
+transfer.xwhen ':=' NULL;
+
+     ! Report Control Information !
+transfer.xclass ':=' NULL;                ! printjob class !
+transfer.xdestination ':=' NULL;          ! name of remote printer !
+transfer.form ':=' NULL;                  ! name of special forms to used !
+transfer.fcb ':=' NULL;                   ! Form Control Block !
+transfer.copies ':=' NULL;                ! number of copies to be printed !
+transfer.holdflag ':=' NULL;              ! flag for MVS spoolers !
+transfer.reporttitle ':=' NULL;           ! report name to be used on separator sheet !
+transfer.carriagecontrol ':=' NULL;
+transfer.spoolflag ':=' NULL;
+transfer.disposition ':=' NULL;
+transfer.eol^classes ':=' NULL;           ! print classes having NL added at end of record !
+transfer.jobname ':=' NULL;
+transfer.jobnumber ':=' NULL;
+transfer.tso^notify ':=' NULL;
+
+-- -1 indicates nowaited i/o to the XCOM process
+return^code := XCOM62^API(transfer, pid, -1, xcom^file^number);
+
+WHILE NOT return^code DO
+   BEGIN
+   -- Do other productive work here. Occasionally check if the tranfer has
+   --    completed.
+!  CALL calculate^the^mandelbrot^set;
+   CALL AWAITIOX(xcom^file^number,, num^bytes,, 0D);
+   IF <>  THEN                     -- error 40 means I/O not yet completed
+      BEGIN
+      CALL FILEINFO(xcom^file^number, error);
+      IF error <> 40 THEN return^code := error;    ! bailout
+      END
+   ELSE
+      BEGIN
+      @int^ptr := @transfer;
+      return^code := int^ptr; -- api puts error codes in first word of struct
+      IF return^code = 0 THEN return^code := -1; -- no more looping
+      END;
+   END;   -- end of WHILE
+
+END;   -- end of proc
