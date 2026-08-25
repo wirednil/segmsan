@@ -218,7 +218,7 @@ class Warning:
 
 def _get_source_lines(source_file: str) -> list[str]:
     try:
-        with open(source_file) as f:
+        with open(source_file, encoding="utf-8") as f:
             return f.readlines()
     except (FileNotFoundError, OSError):
         return []

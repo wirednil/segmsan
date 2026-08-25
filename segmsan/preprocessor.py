@@ -303,7 +303,7 @@ def _expand_one_pass(source: str, macro_map: dict[str, DefineMacro]) -> tuple[st
 
 def collect_defines_from_file(filepath: str) -> tuple[list[DefineMacro], str]:
     try:
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             source = f.read()
     except OSError:
         return [], ""

@@ -78,7 +78,7 @@ def _merge_file(program: Program, filepath: str, node: ImportNode,
     visited.add(abs_path)
 
     try:
-        source = open(filepath).read()
+        source = open(filepath, encoding="utf-8").read()
     except OSError:
         if not skip_missing:
             print(f"[IMPORT] Cannot read: {filepath}", file=sys.stderr)

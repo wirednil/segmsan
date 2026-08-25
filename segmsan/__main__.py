@@ -41,7 +41,7 @@ def main():
     args = ap.parse_args()
 
     try:
-        source = open(args.source).read()
+        source = open(args.source, encoding="utf-8").read()
     except FileNotFoundError:
         print(f"Error: file not found: {args.source}", file=sys.stderr)
         sys.exit(2)

@@ -68,16 +68,16 @@ def _get_program_parser() -> Lark:
     global _lark_parser_program
     if _lark_parser_program is None:
         from .stmt import _PHASE7_MARKER
-        expr    = (_GRAMMAR_DIR / "expr.lark").read_text()
-        common  = (_GRAMMAR_DIR / "common_decl.lark").read_text()
-        var     = (_GRAMMAR_DIR / "var_decl.lark").read_text()
-        struct  = (_GRAMMAR_DIR / "struct_def.lark").read_text()
-        literal = (_GRAMMAR_DIR / "literal_decl.lark").read_text()
-        stmt    = (_GRAMMAR_DIR / "stmt_simple.lark").read_text()
+        expr    = (_GRAMMAR_DIR / "expr.lark").read_text(encoding="utf-8")
+        common  = (_GRAMMAR_DIR / "common_decl.lark").read_text(encoding="utf-8")
+        var     = (_GRAMMAR_DIR / "var_decl.lark").read_text(encoding="utf-8")
+        struct  = (_GRAMMAR_DIR / "struct_def.lark").read_text(encoding="utf-8")
+        literal = (_GRAMMAR_DIR / "literal_decl.lark").read_text(encoding="utf-8")
+        stmt    = (_GRAMMAR_DIR / "stmt_simple.lark").read_text(encoding="utf-8")
         stmt_base = stmt.split(_PHASE7_MARKER)[0]
-        complex_ = (_GRAMMAR_DIR / "stmt_complex.lark").read_text()
-        proc    = (_GRAMMAR_DIR / "proc_body.lark").read_text()
-        tal_top = _GRAMMAR_TAL_TOP.read_text()
+        complex_ = (_GRAMMAR_DIR / "stmt_complex.lark").read_text(encoding="utf-8")
+        proc    = (_GRAMMAR_DIR / "proc_body.lark").read_text(encoding="utf-8")
+        tal_top = _GRAMMAR_TAL_TOP.read_text(encoding="utf-8")
         parts = [expr, common, var, struct, literal, stmt_base, complex_, proc, tal_top]
         combined = _PHASE9_DECLARES + "\n" + "\n".join(_strip_declares(t) for t in parts)
         _lark_parser_program = Lark(combined, parser="lalr", lexer="basic", start="program")

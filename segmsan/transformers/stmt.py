@@ -38,8 +38,8 @@ _lark_parser_complex: Lark | None = None
 def _get_lark_parser() -> Lark:
     global _lark_parser
     if _lark_parser is None:
-        expr_text = _GRAMMAR_EXPR.read_text()
-        stmt_text = _GRAMMAR_STMT.read_text()
+        expr_text = _GRAMMAR_EXPR.read_text(encoding="utf-8")
+        stmt_text = _GRAMMAR_STMT.read_text(encoding="utf-8")
         combined = expr_text + "\n" + stmt_text
         _lark_parser = Lark(combined, parser="lalr", lexer="basic", start="stmt_list")
     return _lark_parser
@@ -48,9 +48,9 @@ def _get_lark_parser() -> Lark:
 def _get_lark_parser_complex() -> Lark:
     global _lark_parser_complex
     if _lark_parser_complex is None:
-        expr_text = _GRAMMAR_EXPR.read_text()
-        stmt_text = _GRAMMAR_STMT.read_text()
-        complex_text = _GRAMMAR_COMPLEX.read_text()
+        expr_text = _GRAMMAR_EXPR.read_text(encoding="utf-8")
+        stmt_text = _GRAMMAR_STMT.read_text(encoding="utf-8")
+        complex_text = _GRAMMAR_COMPLEX.read_text(encoding="utf-8")
         stmt_base = stmt_text.split(_PHASE7_MARKER)[0]
         combined = expr_text + "\n" + stmt_base + "\n" + complex_text
         _lark_parser_complex = Lark(combined, parser="lalr", lexer="basic", start="stmt_list")

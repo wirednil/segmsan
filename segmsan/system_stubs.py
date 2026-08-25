@@ -15,7 +15,7 @@ _DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "system_procs.json"
 def load_system_stubs() -> dict[str, ProcSummary]:
     if not os.path.isfile(_DATA_FILE):
         return {}
-    with open(_DATA_FILE) as f:
+    with open(_DATA_FILE, encoding="utf-8") as f:
         data = json.load(f)
     stubs: dict[str, ProcSummary] = {}
     for name, info in data.items():

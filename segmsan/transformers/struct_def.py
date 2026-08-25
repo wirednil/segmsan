@@ -19,7 +19,7 @@ _lark_parser: Lark | None = None
 def _get_lark_parser() -> Lark:
     global _lark_parser
     if _lark_parser is None:
-        grammar = _GRAMMAR_COMMON.read_text() + "\n" + _GRAMMAR_PATH.read_text()
+        grammar = _GRAMMAR_COMMON.read_text(encoding="utf-8") + "\n" + _GRAMMAR_PATH.read_text(encoding="utf-8")
         _lark_parser = Lark(grammar, parser="lalr", lexer="basic", start="struct_decl")
     return _lark_parser
 

@@ -85,15 +85,15 @@ def _strip_declares(text: str) -> str:
 def _get_proc_body_parser() -> Lark:
     global _lark_parser_proc_body
     if _lark_parser_proc_body is None:
-        expr    = _GRAMMAR_EXPR.read_text()
-        common  = _GRAMMAR_COMMON.read_text()
-        var     = _GRAMMAR_VAR.read_text()
-        struct  = _GRAMMAR_STRUCT.read_text()
-        literal = _GRAMMAR_LITERAL.read_text()
-        stmt    = _GRAMMAR_STMT.read_text()
+        expr    = _GRAMMAR_EXPR.read_text(encoding="utf-8")
+        common  = _GRAMMAR_COMMON.read_text(encoding="utf-8")
+        var     = _GRAMMAR_VAR.read_text(encoding="utf-8")
+        struct  = _GRAMMAR_STRUCT.read_text(encoding="utf-8")
+        literal = _GRAMMAR_LITERAL.read_text(encoding="utf-8")
+        stmt    = _GRAMMAR_STMT.read_text(encoding="utf-8")
         stmt_base = stmt.split(_PHASE7_MARKER)[0]
-        complex_ = _GRAMMAR_COMPLEX.read_text()
-        proc    = _GRAMMAR_PROC.read_text()
+        complex_ = _GRAMMAR_COMPLEX.read_text(encoding="utf-8")
+        proc    = _GRAMMAR_PROC.read_text(encoding="utf-8")
         parts = [expr, common, var, struct, literal, stmt_base, complex_, proc]
         combined = _PHASE8_DECLARES + "\n" + "\n".join(_strip_declares(t) for t in parts)
         _lark_parser_proc_body = Lark(combined, parser="lalr", lexer="basic", start="proc_unit")
