@@ -147,6 +147,17 @@ def _split_args(text: str) -> list[str]:
                 current.append(text[i])
                 i += 1
             continue
+        # Escaped comma in a DEFINE invocation's actual parameter (RefMan
+        # "Passing Actual Parameters"): a comma that must be part of ONE
+        # argument's text, not treated as the argument separator, is
+        # written as ','. E.g. `varproc(x, i ',' j ',' k)` passes a single
+        # second argument whose text is "i , j , k". The apostrophes are
+        # purely an invocation-time escape — unwrap to a literal comma so
+        # the argument (and later, the expanded macro body) has one.
+        if ch == "'" and text[i:i + 3] == "','":
+            current.append(',')
+            i += 3
+            continue
         if ch == '(':
             depth += 1
             current.append(ch)
